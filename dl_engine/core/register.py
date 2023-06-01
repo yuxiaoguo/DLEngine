@@ -5,6 +5,8 @@ Licensed under the MIT License.
 from torch import optim
 from torch.utils import data
 
+from dl_engine.core.logger import Logger
+
 
 class RegisterModule:
     """
@@ -30,6 +32,7 @@ class RegisterModule:
         """
         Register a module.
         """
+        Logger().info(f'Registering {cls.__name__}.')
         self._registered_modules[cls.__name__] = cls
         return cls
 
