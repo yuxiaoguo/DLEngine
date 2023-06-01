@@ -23,7 +23,6 @@ from .logger import Logger
 from .register import (
     RegisterModule,
     network_register,
-    ref_network_register,
     dataset_register,
     sampler_register,
     optimizer_register,
@@ -38,7 +37,7 @@ class Pipeline:
     """
     def __init__(self, config_path, log_dir, ckpt_dir, prof_dir):
         SingletonWriter().initialize(log_dir=log_dir)
-        self._config = PipelineConfig().from_yaml(config_path)
+        self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
         self._fabric = L.Fabric(precision=self._config.precision)  # type: ignore
         self._fabric.launch()
 
@@ -61,47 +60,6 @@ class Pipeline:
 
         self._rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
 
-    def parse_args(self, arg_str: str | list | tuple | dict):
-        """
-        Parse args from string.
-        """
-        if isinstance(arg_str, str):
-            type_var_str = re.search(r'\$.*\$', arg_str)
-            if not type_var_str:
-                return arg_str
-            type_vars = type_var_str.group()[1:-1].split(':')
-            if len(type_vars) == 2:
-                type_src, type_name = type_vars
-            elif len(type_vars) == 1:
-                type_src = 'MODULE'
-                type_name, = type_vars
-            else:
-                raise NotImplementedError(f'Unknown type vars: {type_vars}')
-
-            if type_src == 'ENV':
-                env_str = os.environ.get(type_name, None)
-                assert env_str is not None, f'Cannot find {type_name} in environment variables.'
-                arg_value = arg_str.replace(type_var_str.group(), env_str)
-            elif type_src == 'MODULE':
-                arg_value = self._query_target(type_name)
-            else:
-                raise NotImplementedError(f'Unknown type source: {type_src}')
-            return arg_value
-        elif isinstance(arg_str, list):
-            return [self.parse_args(_i) for _i in arg_str]
-        elif isinstance(arg_str, tuple):
-            return tuple([self.parse_args(_i) for _i in arg_str])
-        elif isinstance(arg_str, dict):
-            dict_str = dict()
-            for _ik, _iv in arg_str.items():
-                print(_ik, _iv)
-                dict_str[_ik] = self.parse_args(_iv)
-            return dict_str
-            # return {_ik: self.parse_args(_iv) for _ik, _iv in arg_str.items()}
-        elif isinstance(arg_str, (int, float)):
-            return arg_str
-        raise NotImplementedError(f'Unknown type of arg_str: {type(arg_str)}')
-
     def args_matching(self, func: Callable, kwargs_dict: Dict):
         """
         Matching the args of function with args_dict.
@@ -117,7 +75,7 @@ class Pipeline:
         for _k, _v in kwargs_dict.items():
             if _k in func_kwargs:
                 Logger().info_zero_rank(f"-- Matched arg: {_k}={_v}")
-                matched_dict[_k] = self.parse_args(_v)
+                matched_dict[_k] = self._config.parse_args(_v, self._query_target())
             else:
                 raise ValueError(f'Unmatched arg: {_k}={_v}')
 
@@ -125,7 +83,7 @@ class Pipeline:
         Logger().warning_zero_rank(f'-- Unmatched args: {unmatched_args}')
         return matched_dict
 
-    def _query_target(self, key: str):
+    def _query_target(self):
         """
         Query target.
         """
@@ -137,9 +95,7 @@ class Pipeline:
             **self._optimizers,
             **self._func_components
         }
-        if key not in targets:
-            raise ValueError(f'Unmatched target: {key}')
-        return targets[key]
+        return targets
 
     def _build(self):
         """

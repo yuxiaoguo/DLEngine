@@ -15,9 +15,9 @@ class ProgressBarLogger(BaseCallback):
     """
     Progress bar logger callback.
     """
-    def __init__(self, bar_width, prefix='', in_descs=None, out_descs=None, io_type=BaseIO):
+    def __init__(self, stride, prefix='', in_descs=None, out_descs=None, io_type=BaseIO):
         super().__init__(in_descs=in_descs, out_descs=out_descs, io_type=io_type)
-        self._bar_width = bar_width
+        self._stride = stride
         self._pbar: Optional[tqdm.tqdm] = None
         self._prefix = prefix
         self._iter = 0
@@ -47,10 +47,10 @@ class ProgressBarLogger(BaseCallback):
         """
         Run the callback.
         """
-        if self._iter % self._bar_width == 0:
+        if self._iter % self._stride == 0:
             if self._pbar is not None:
                 self._pbar.close()
-            self._pbar = tqdm.tqdm(total=self._bar_width)
+            self._pbar = tqdm.tqdm(total=self._stride)
         self._gather_iter_info(io_proto)
         out_msg = self._gen_out_str()
         assert self._pbar is not None

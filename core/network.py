@@ -140,7 +140,7 @@ class BaseNetwork(Module):
         return self._trainable
 
     @abstractmethod
-    def _run(self, io_proto: BaseIO, **extra_kwargs) -> BaseIO:
+    def _run(self, io_proto: BaseIO, **extra_kwargs):
         """
         Run function.
         """
