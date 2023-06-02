@@ -7,7 +7,7 @@ import logging
 import argparse
 
 from .test_scripts import submit_local_test
-from .train_scripts import submit_local_train, submit_amlt_train, submit_amlt_fetch
+from .train_scripts import submit_local_train
 
 
 def register_train_parser(sub_parser: argparse._SubParsersAction, train_cmd='local_train'):
@@ -17,6 +17,19 @@ def register_train_parser(sub_parser: argparse._SubParsersAction, train_cmd='loc
     task_parser: argparse.ArgumentParser = sub_parser.add_parser(train_cmd)
     task_parser.description = 'Submit an experiment to the local machine.'
 
+    task_parser.add_argument('--config_path', type=str, help='Path to the config file.')
+    task_parser.add_argument('--exp_name', type=str, help='Name of the experiment.')
+    task_parser.add_argument('--exp_ctg', type=str, help='Category of the experiment.')
+    task_parser.add_argument('--milestone', type=str, help='Milestone of the experiment.')
+
+def register_aml_train_parser(sub_parser: argparse._SubParsersAction, train_cmd='aml_train'):
+    """
+    Add the submit_local command to the parser.
+    """
+    task_parser: argparse.ArgumentParser = sub_parser.add_parser(train_cmd)
+    task_parser.description = 'Submit an experiment to the aml cluster.'
+
+    task_parser.add_argument('--target', type=str, help='Target Azure to run the experiment on.')
     task_parser.add_argument('--config_path', type=str, help='Path to the config file.')
     task_parser.add_argument('--exp_name', type=str, help='Name of the experiment.')
     task_parser.add_argument('--exp_ctg', type=str, help='Category of the experiment.')
@@ -38,16 +51,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     cmd_parser = parser.add_subparsers(help='Command to run.', dest='option')
     register_train_parser(cmd_parser)
-    register_train_parser(cmd_parser, train_cmd='amlt_train')
+    register_aml_train_parser(cmd_parser, train_cmd='aml_train')
     register_test_local_parser(cmd_parser)
     register_test_local_parser(cmd_parser, test_cmd='amlt_fetch')
     args = parser.parse_args()
     if args.option == 'local_train':
         submit_local_train(args.config_path, args.exp_name, args.exp_ctg, args.milestone)
-    elif args.option == 'amlt_train':
-        submit_amlt_train(args.config_path, args.exp_name, args.exp_ctg, args.milestone)
-    elif args.option == 'amlt_fetch':
-        submit_amlt_fetch(args.exp_name, args.exp_ctg, args.milestone)
     elif args.option == 'local_test':
         submit_local_test(args.exp_name, args.exp_ctg, args.milestone)
     else:

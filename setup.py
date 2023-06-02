@@ -21,10 +21,10 @@ setup(
         'configargparse==1.5.3',
         'opencv-python-headless',
         'librosa==0.10.0.post2',
-        'gitpython',
         'lightning==2.0.2',
         'moviepy==1.0.3',
         'torchmetrics==0.11.4',
+        'gitpython'
     ],
     zip_safe=False
 )
