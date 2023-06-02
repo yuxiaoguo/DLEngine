@@ -4,7 +4,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 from setuptools import setup
 
 setup(
-    name='dl_profiler',
+    name='dl_engine',
     version='0.0.1',
     description='Deep Learning Engine for PyTorch',
     url='https://github.com/yuxiaoguo/DLEngine',
