@@ -1,7 +1,7 @@
 """
 Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='dl_engine',
@@ -11,7 +11,7 @@ setup(
     author='Yu-Xiao Guo',
     author_email='yuxiao.guo@outlook.com',
     license='MIT',
-    packages=['dl_engine'],
+    packages=find_packages(),
     install_requires=[
         'torch==1.13.1',
         'PyYAML==6.0',
