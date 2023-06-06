@@ -5,8 +5,9 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 import os
 import re
 import json
-import pickle
+import zipfile
 import logging
+import pickle
 
 import torch
 import numpy as np
@@ -25,8 +26,8 @@ class PartialLFSDataset(data.Dataset):
     """
     The class is used to register the RAVDESS dataset.
     """
-    def __init__(self, data_root, used_keys: dict[str, str], seq_mode: bool, seq_len=0,
-        shuffle=False, transform=None):
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], 
+        seq_mode: bool, seq_len=0, shuffle=False, transform=None):
         """
         Args:
             data_root (string): Path to the data root.
@@ -35,13 +36,15 @@ class PartialLFSDataset(data.Dataset):
             shuffle (bool): Whether to shuffle the data.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
+        self._data_root = data_root
+        self._desc_cfg = desc_cfg
+
         self._seq_mode = seq_mode
         self._shuffle = shuffle
         self._transform = transform
-        self._data_root = data_root
         self._seq_len = seq_len
 
-        self._desc_file = os.path.join(data_root, 'desc.pkl')
+        self._desc_file = os.path.join(data_root, desc_cfg)
         self._desc_key = 'sequential' if seq_mode else 'frame'
 
         if dist.is_available() and dist.is_initialized():
@@ -51,8 +54,10 @@ class PartialLFSDataset(data.Dataset):
             self._rank_id = 0
             self._rank_all = 1
 
-        with open(self._desc_file, 'rb') as desc_file_stream:
-            self._desc_dict = pickle.load(desc_file_stream)
+        with open(self._desc_file, 'r', encoding='utf-8') as desc_file_stream:
+            self._desc_dict = json.load(desc_file_stream)
+
+        # Calculate the number of samples and the offset
         self._num_samples = self._desc_dict[f'{self._desc_key}_total']
         self._rank_start = self._rank_id * self._num_samples // self._rank_all
         self._rank_end = (self._rank_id + 1) * self._num_samples // self._rank_all
@@ -74,33 +79,9 @@ class PartialLFSDataset(data.Dataset):
             f' and offset {self._rank_offset}')
         self._data_pkl_files = [_f[0] for _f in all_offset[fidx_start:fidx_end+1]]
 
-        # Load the data description and data
-        assert transform is None, 'The transform is not supported yet.'
-        desc_json_files = list()
-        for file_name in os.listdir(data_root):
-            file_ext = os.path.splitext(file_name)[-1]
-            if file_ext == '.json':
-                desc_json_files.append(file_name)
-        assert desc_json_files and self._data_pkl_files, 'The data is not ready.'
 
         # load the data description and merge split items
-        data_desc: dict[str, list] = dict()
-        for desc_json_file in desc_json_files:
-            desc_json_path = os.path.join(data_root, desc_json_file)
-            with open(desc_json_path, 'r', encoding='utf-8') as json_file:
-                data_desc_single: dict = json.load(json_file)
-            for key, value in data_desc_single.items():
-                data_desc.setdefault(key, list()).append(value)
-        self._data_desc = dict()
-        for key, value in data_desc.items():
-            value = np.asarray(value)
-            if key.endswith('min'):
-                LOG.info(f'Rank {self._rank_id}: Key {key} is applied with reduce_min operator.')
-                value = np.min(value, axis=0)
-            else:
-                LOG.info(f'Rank {self._rank_id}: Key {key} is applied with reduce_max operator.')
-                value = np.max(value, axis=0)
-            self._data_desc[key] = value
+        self._data_desc = self._desc_dict.copy()
 
         # Split the used keys into two parts: saved in data and generated runtime.
         self._cached_kv_pairs = dict()
@@ -123,10 +104,14 @@ class PartialLFSDataset(data.Dataset):
             return
         self._initialized = True
         for data_pkl_file in self._data_pkl_files:
-            data_pkl_path = os.path.join(self._data_root, data_pkl_file)
+            data_pkl_path = os.path.join(self._data_root, f'{data_pkl_file}.zip')
             LOG.info(f'Rank {self._rank_id}: Loading data from {data_pkl_path}')
-            with open(data_pkl_path, 'rb') as pkl_file:
-                raw_data: dict[str, dict] = pickle.load(pkl_file)
+            zip_in = zipfile.ZipFile(data_pkl_path, 'r')
+            all_files = zip_in.namelist()
+            raw_data = dict()
+            for file_name in all_files:
+                pkl_data: dict[str, dict] = zip_in.read(file_name)
+                raw_data[os.path.splitext(file_name)[0]] = pickle.loads(pkl_data)
             for _, date_data in raw_data.items():
                 for i_key, i_value in date_data.items():
                     if i_key not in self._cached_kv_pairs.values():

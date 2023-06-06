@@ -3,17 +3,92 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 import re
 import os
-import yaml
 from typing import Optional
+
+import yaml
 
 from ..utils import Singleton
 
 
-class PipelineConfig(metaclass=Singleton):
+class BaseConfig(metaclass=Singleton):
+    """
+    Base config class
+    """
+    def __init__(self) -> None:
+        self.envs = dict()
+
+    def load_from_dict(self, config_dict: dict):
+        """
+        Load config from dict
+        """
+        local_cfg = config_dict.copy()
+
+        self.envs = os.environ.copy()
+
+        envs = local_cfg.pop('envs', dict())
+        for env_key, env_value in envs.items():
+            envs[env_key] = self.parse_args(env_value)
+        self.envs.update(envs)
+
+        for key, value in local_cfg.items():
+            if hasattr(self, key):
+                setattr(self, key, self.parse_args(value))
+        return self
+
+    def parse_args(self, arg_str: str | list | tuple | dict, extra_kwargs: Optional[dict] = None):
+        """
+        Parse args from string.
+        """
+        if extra_kwargs is None:
+            extra_kwargs = dict()
+        if isinstance(arg_str, str):
+            type_var_pairs = re.findall(r'\$([A-Za-z0-9\:\_]*)\$', arg_str)
+            if not type_var_pairs:
+                return arg_str
+            arg_value = arg_str
+            for tv_pair in type_var_pairs:
+                tv_part = tv_pair.split(':')
+                if len(tv_part) == 2:
+                    type_src, type_name = tv_part
+                elif len(tv_part) == 1:
+                    type_src = 'MODULE'
+                    type_name, = tv_part
+                else:
+                    raise NotImplementedError(f'Unknown type vars: {tv_pair}')
+                if type_src == 'ENV':
+                    env_str = self.envs.get(type_name, None)
+                    if env_str is None:
+                        raise ValueError(f'Unknown env var: {type_name}')
+                    arg_value = arg_value.replace(f'${tv_pair}$', env_str)
+                elif type_src == 'MODULE':
+                    arg_value = extra_kwargs[type_name]
+                else:
+                    raise NotImplementedError(f'Unknown type source: {type_src}')
+            return arg_value
+        elif isinstance(arg_str, list):
+            return [self.parse_args(_i, extra_kwargs) for _i in arg_str]
+        elif isinstance(arg_str, tuple):
+            return tuple([self.parse_args(_i, extra_kwargs) for _i in arg_str])
+        elif isinstance(arg_str, dict):
+            dict_str = dict()
+            for _ik, _iv in arg_str.items():
+                print(_ik, _iv)
+                dict_str[_ik] = self.parse_args(_iv, extra_kwargs)
+            return dict_str
+            # return {_ik: self.parse_args(_iv) for _ik, _iv in arg_str.items()}
+        elif isinstance(arg_str, (int, float)):
+            return arg_str
+        raise NotImplementedError(f'Unknown type of arg_str: {type(arg_str)}')
+
+
+
+class PipelineConfig(BaseConfig):
     """
     Config used for pipeline training
     """
     def __init__(self) -> None:
+        super().__init__()
+
         self._raw_config = dict()
 
         self.config_path = str()
@@ -23,8 +98,6 @@ class PipelineConfig(metaclass=Singleton):
 
         self.save_ckpt = 0
         self.precision = str()
-
-        self.envs = dict()
 
         self.datasets = dict()
         self.samplers = dict()
@@ -76,48 +149,3 @@ class PipelineConfig(metaclass=Singleton):
             else:
                 epoch = os.path.basename(self.ckpt_dir).split('.')[0]
         self.envs['EPOCH'] = epoch
-
-    def parse_args(self, arg_str: str | list | tuple | dict, extra_kwargs: Optional[dict] = None):
-        """
-        Parse args from string.
-        """
-        if extra_kwargs is None:
-            extra_kwargs = dict()
-        if isinstance(arg_str, str):
-            type_var_pairs = re.findall(r'\$([A-Za-z0-9\:\_]*)\$', arg_str)
-            if not type_var_pairs:
-                return arg_str
-            arg_value = arg_str
-            for tv_pair in type_var_pairs:
-                tv_part = tv_pair.split(':')
-                if len(tv_part) == 2:
-                    type_src, type_name = tv_part
-                elif len(tv_part) == 1:
-                    type_src = 'MODULE'
-                    type_name, = tv_part
-                else:
-                    raise NotImplementedError(f'Unknown type vars: {tv_pair}')
-                if type_src == 'ENV':
-                    env_str = self.envs.get(type_name, None)
-                    if env_str is None:
-                        raise ValueError(f'Unknown env var: {type_name}')
-                    arg_value = arg_value.replace(f'${tv_pair}$', env_str)
-                elif type_src == 'MODULE':
-                    arg_value = extra_kwargs[type_name]
-                else:
-                    raise NotImplementedError(f'Unknown type source: {type_src}')
-            return arg_value
-        elif isinstance(arg_str, list):
-            return [self.parse_args(_i, extra_kwargs) for _i in arg_str]
-        elif isinstance(arg_str, tuple):
-            return tuple([self.parse_args(_i, extra_kwargs) for _i in arg_str])
-        elif isinstance(arg_str, dict):
-            dict_str = dict()
-            for _ik, _iv in arg_str.items():
-                print(_ik, _iv)
-                dict_str[_ik] = self.parse_args(_iv, extra_kwargs)
-            return dict_str
-            # return {_ik: self.parse_args(_iv) for _ik, _iv in arg_str.items()}
-        elif isinstance(arg_str, (int, float)):
-            return arg_str
-        raise NotImplementedError(f'Unknown type of arg_str: {type(arg_str)}')
