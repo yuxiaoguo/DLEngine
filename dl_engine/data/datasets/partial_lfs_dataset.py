@@ -25,8 +25,8 @@ class PartialLFSDataset(data.Dataset):
     """
     The class is used to register the RAVDESS dataset.
     """
-    def __init__(self, data_root, used_keys: dict[str, str], seq_mode: bool, seq_len=0,
-        shuffle=False, transform=None):
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], 
+        seq_mode: bool, seq_len=0, shuffle=False, transform=None):
         """
         Args:
             data_root (string): Path to the data root.
@@ -35,10 +35,12 @@ class PartialLFSDataset(data.Dataset):
             shuffle (bool): Whether to shuffle the data.
             transform (callable, optional): Optional transform to be applied on a sample.
         """
+        self._data_root = data_root
+        self._desc_cfg = desc_cfg
+
         self._seq_mode = seq_mode
         self._shuffle = shuffle
         self._transform = transform
-        self._data_root = data_root
         self._seq_len = seq_len
 
         self._desc_file = os.path.join(data_root, 'desc.pkl')
