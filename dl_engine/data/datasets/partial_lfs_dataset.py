@@ -63,6 +63,17 @@ class PartialLFSDataset(data.Dataset):
             ]
             "sequential_total": int    # The total number of the sequential data.
         }
+
+    An example to jointly use this dataset and `FileStorageSampler` in Lightning.Fabric:
+    ``` python
+    from lightning import Fabric
+    fabric = Fabric()
+    fabric.launch()
+    dataset = PartialLFSDataset(...)
+    sampler = FileStorageSampler(dataset, ...)
+    dataloader = DataLoader(dataset, sampler=sampler, ...)
+    fabric.register_dataloader(dataloader, ...)
+    ```
     """
     def __init__(self, data_root, desc_cfg, used_keys: dict[str, str],
         seq_mode: bool, cache=False, seq_len=0, shuffle=False, transform=None):
