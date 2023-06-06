@@ -142,10 +142,13 @@ class PipelineConfig(BaseConfig):
         """
         Set epoch
         """
+        # TODO: make me unify with ckpt loader
         if epoch is None:
             if os.path.isdir(self.ckpt_dir):
-                assert os.path.exists(os.path.join(self.ckpt_dir, 'final.pt'))
-                epoch = 'final'
+                if os.path.exists(os.path.join(self.ckpt_dir, 'final.pt')):
+                    epoch = 'final'
+                else:
+                    epoch = 0
             else:
                 epoch = os.path.basename(self.ckpt_dir).split('.')[0]
         self.envs['EPOCH'] = epoch
