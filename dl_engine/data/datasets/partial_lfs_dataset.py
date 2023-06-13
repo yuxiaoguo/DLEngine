@@ -229,8 +229,10 @@ class PartialLFSDataset(data.Dataset):
             zip_files.append(zipfile.ZipFile(os.path.join(self._data_root, zip_file), 'r'))
         all_file_maps = list()
         for zip_idx, zip_file in enumerate(zip_files):
+            meta_file, = [_f for _f in self._cfg_desc.meta_files \
+                if _f.meta_file == zip_files_path[zip_idx]]
             all_file_maps.extend([(_f, zip_idx) for _f in \
-                self._func_file2zip_ids(zip_file, self._cfg_desc.meta_files[zip_idx])])
+                self._func_file2zip_ids(zip_file, meta_file)])
         partial_file_maps = all_file_maps[self._rank_info.rank_offset:\
             self._rank_info.rank_offset + self._rank_info.num_rank_samples]
         return partial_file_maps, zip_files
