@@ -14,6 +14,7 @@ import numpy as np
 from torch.utils import data
 from torch import distributed as dist
 
+from dl_engine.data.protocols import SequentialDataDescV0, MetaSeqFileDescV0
 from dl_engine.core.register import dataset_register
 from dl_engine.core.logger import Logger
 
@@ -26,12 +27,55 @@ class RankSamplesInfo:
     The information of the samples in the rank.
     """
     def __init__(self) -> None:
+        self.rank_id = 0
+        self.rank_all = 1
+
         self.num_all_samples = 0
         self.num_rank_samples = 0
         self.rank_start = 0
         self.rank_end = 0
         self.rank_offset = 0
         self.rank_zip_files = list()
+
+    def _init_rank_info(self):
+        if dist.is_available() and dist.is_initialized():
+            self.rank_id = dist.get_rank()
+            self.rank_all = dist.get_world_size()
+        else:
+            self.rank_id = 0
+            self.rank_all = 1
+
+    def _init_rank_samples_desc(self, num_all_samples, offsets, meta_files):
+        # Calculate the number of samples and the offset
+        self.num_all_samples = num_all_samples
+        self.rank_start = self.rank_id * self.num_all_samples // self.rank_all
+        self.rank_end = (self.rank_id + 1) * self.num_all_samples // self.rank_all
+        self.num_rank_samples = self.rank_end - self.rank_start
+        Logger().info(f'Rank {self.rank_id}: {self.num_rank_samples}' +\
+            f' between {self.rank_start}-{self.rank_end}')
+        all_offset = offsets
+        fidx_start = 0
+        fidx_end = 0
+        file_start = 0
+        for o_idx, offset_item in enumerate(all_offset):
+            if offset_item <= self.rank_start:
+                fidx_start = o_idx
+                file_start = offset_item
+            if offset_item < self.rank_end:
+                fidx_end = o_idx
+        self.rank_offset = self.rank_start - file_start
+        Logger().info(f'Rank {self.rank_id}: file starts {file_start}' +\
+            f' and offset {self.rank_offset}')
+        self.rank_zip_files = meta_files[fidx_start:fidx_end+1]
+        return self
+
+    def init(self, num_all_samples, offsets, meta_files):
+        """
+        Initialize the rank information.
+        """
+        self._init_rank_info()
+        self._init_rank_samples_desc(num_all_samples, offsets, meta_files)
+        return self
 
 
 @dataset_register.register
@@ -89,82 +133,48 @@ class PartialLFSDataset(data.Dataset):
         self._desc_cfg = desc_cfg
         self._cache = cache
 
+        self._used_keys = used_keys
         self._seq_mode = seq_mode
         self._shuffle = shuffle
         self._transform = transform
         self._seq_len = seq_len
 
         self._desc_file = os.path.join(data_root, desc_cfg)
-        self._desc_key = 'sequential' if seq_mode else 'frame'
-
-        if dist.is_available() and dist.is_initialized():
-            self._rank_id = dist.get_rank()
-            self._rank_all = dist.get_world_size()
-        else:
-            self._rank_id = 0
-            self._rank_all = 1
-
         with open(self._desc_file, 'r', encoding='utf-8') as desc_file_stream:
-            self._desc_dict = json.load(desc_file_stream)
-
-        # Generate the rank information
-        self.rank_info = self._gen_rank_info()
-
-        # Build zip mapping
-        self.zip_mapping, self.zip_files = self._build_zip_mapping()
+            self._cfg_desc = SequentialDataDescV0(**json.load(desc_file_stream))
 
         # load the data description and merge split items
-        self._data_desc = self._desc_dict.copy()
+        self._data_desc = self._cfg_desc.props
+
+        # Generate the rank information
+        total_samples = self._cfg_desc.total_samples if seq_mode \
+            else self._cfg_desc.total_nonseq_samples
+        offsets = [_f.global_offset if seq_mode else _f.global_nonseq_offset\
+            for _f in self._cfg_desc.meta_files]
+        meta_file_names = [_f.meta_file for _f in self._cfg_desc.meta_files]
+        self._rank_info = RankSamplesInfo().init(total_samples, offsets, meta_file_names)
+
+        # Build zip mapping
+        self._zip_mapping, self._zip_files = self._build_zip_mapping()
 
         # Split the used keys into two parts: saved in data and generated runtime.
-        self._cached_kv_pairs = dict()
-        self._gen_kv_pairs = dict()
-        for u_key, u_value in used_keys.items():
-            gen_flag = re.findall(r'\@(.*)\@(.*)', u_value)
-            assert len(gen_flag) <= 1, 'The key should not contain more than one gen flag.'
-            if not gen_flag:
-                self._cached_kv_pairs[u_key] = u_value
-                continue
-            gen_method, gen_key = gen_flag[0]
-            self._gen_kv_pairs[gen_key] = (u_key, gen_method)
+        self._cached_kv_pairs, self._gen_kv_pairs = self._build_implicit_kv_map()
 
-    def _gen_rank_info(self) -> RankSamplesInfo:
-        """
-        Generate the rank information.
-        """
-        rank_info = RankSamplesInfo()
-
-        # Calculate the number of samples and the offset
-        rank_info.num_all_samples = self._desc_dict[f'{self._desc_key}_total']
-        rank_info.rank_start = self._rank_id * rank_info.num_all_samples // self._rank_all
-        rank_info.rank_end = (self._rank_id + 1) * rank_info.num_all_samples // self._rank_all
-        rank_info.num_rank_samples = rank_info.rank_end - rank_info.rank_start
-        Logger().info(f'Rank {self._rank_id}: {rank_info.num_rank_samples}' +\
-            f' between {rank_info.rank_start}-{rank_info.rank_end}')
-        all_offset = self._desc_dict[f'{self._desc_key}_offset']
-        fidx_start = 0
-        fidx_end = 0
-        file_start = 0
-        for o_idx, offset_item in enumerate(all_offset):
-            if offset_item[1] <= rank_info.rank_start:
-                fidx_start = o_idx
-                file_start = offset_item[1]
-            if offset_item[1] < rank_info.rank_end:
-                fidx_end = o_idx
-        rank_info.rank_offset = rank_info.rank_start - file_start
-        Logger().info(f'Rank {self._rank_id}: file starts {file_start}' +\
-            f' and offset {rank_info.rank_offset}')
-        rank_info.rank_zip_files = [f'{_f[0]}.zip' for _f in all_offset[fidx_start:fidx_end+1]]
-
-        return rank_info
-
-    @staticmethod
-    def _func_file2zip_ids(zip_file: zipfile.ZipFile):
+    def _func_file2zip_ids(self, zip_file: zipfile.ZipFile, zip_cfg: MetaSeqFileDescV0):
         """
         The function is to give each sample (or file) a global unique name and
             thus to locate the sample to the zip file and its index in later use. 
         """
-        return zip_file.namelist()
+        if self._seq_mode:
+            return zip_file.namelist()
+
+        frame_ids = list()
+        offsets = zip_cfg.local_nonseq_offset + [zip_cfg.num_nonseq_samples]
+
+        zip_files = zip_file.namelist()
+        for _f, _o, _e in zip(zip_files, offsets[:-1], offsets[1:]):
+            frame_ids.extend([(_f, _i - _o) for _i in range(_o, _e)])
+        return frame_ids
 
     def _func_id2file(self, zip_file: zipfile.ZipFile, uni_id: str, src_key='',
         dst_key=''):
@@ -176,7 +186,14 @@ class PartialLFSDataset(data.Dataset):
         """
         out_dict = dict()
 
-        meta_data = pickle.loads(zip_file.read(uni_id))
+        if isinstance(uni_id, str):
+            meta_data = pickle.loads(zip_file.read(uni_id))
+        elif isinstance(uni_id, tuple):
+            meta_data: dict = pickle.loads(zip_file.read(uni_id[0]))
+            meta_data = {_k: _v[uni_id[1]] for _k, _v in meta_data.items()}
+        else:
+            raise NotImplementedError(f'The type of uni_id {type(uni_id)} is not supported.')
+
         normed_data = self._auto_norm_vec(src_key, meta_data[src_key])
         np_data: np.ndarray = self._auto_random_clip(normed_data)
 
@@ -190,22 +207,36 @@ class PartialLFSDataset(data.Dataset):
             out_dict[gen_key] = torch.as_tensor(gen_data)
         return out_dict
 
+    def _build_implicit_kv_map(self):
+        cached_kv_pairs = dict()
+        gen_kv_pairs = dict()
+        for u_key, u_value in self._used_keys.items():
+            gen_flag = re.findall(r'\@(.*)\@(.*)', u_value)
+            assert len(gen_flag) <= 1, 'The key should not contain more than one gen flag.'
+            if not gen_flag:
+                cached_kv_pairs[u_key] = u_value
+                continue
+            gen_method, gen_key = gen_flag[0]
+            gen_kv_pairs[gen_key] = (u_key, gen_method)
+        return cached_kv_pairs, gen_kv_pairs
+
     def _build_zip_mapping(self):
         zip_files = list()
-        zip_files_path = self.rank_info.rank_zip_files
+        zip_files_path = self._rank_info.rank_zip_files
         for zip_file in zip_files_path:
             assert os.path.exists(os.path.join(self._data_root, zip_file)),\
                 f'Zip file {zip_file} does not exist.'
             zip_files.append(zipfile.ZipFile(os.path.join(self._data_root, zip_file), 'r'))
         all_file_maps = list()
         for zip_idx, zip_file in enumerate(zip_files):
-            all_file_maps.extend([(_f, zip_idx) for _f in self._func_file2zip_ids(zip_file)])
-        partial_file_maps = all_file_maps[self.rank_info.rank_offset:\
-            self.rank_info.rank_offset + self.rank_info.num_rank_samples]
+            all_file_maps.extend([(_f, zip_idx) for _f in \
+                self._func_file2zip_ids(zip_file, self._cfg_desc.meta_files[zip_idx])])
+        partial_file_maps = all_file_maps[self._rank_info.rank_offset:\
+            self._rank_info.rank_offset + self._rank_info.num_rank_samples]
         return partial_file_maps, zip_files
 
     def __len__(self):
-        return self.rank_info.num_all_samples
+        return self._rank_info.num_all_samples
 
     def _auto_random_clip(self, target_data: np.ndarray):
         if not self._seq_mode or self._seq_len == 0:
@@ -234,23 +265,24 @@ class PartialLFSDataset(data.Dataset):
         box_cnt = (box_max + box_min) / 2
         box_size = np.max(box_max - box_cnt)
         key_dims = box_max.shape[0]
-        key_length = target_value.shape[0]
+        key_raw_shape = target_value.shape
         normed_value = \
-            (target_value.reshape([key_length, -1, key_dims]) - box_cnt) / box_size
-        normed_value = normed_value.reshape([key_length, -1])
+            (target_value.reshape([-1, key_dims]) - box_cnt) / box_size
+        normed_value = normed_value.reshape(key_raw_shape)
         return normed_value
 
     def __getitem__(self, idx) -> dict[str, torch.Tensor]:
         sample_out = dict()
         r_idx = idx
-        idx = idx - self.rank_info.rank_start
-        if idx < 0 or idx >= self.rank_info.num_rank_samples:
-            Logger().warning(\
-                f'Rank {self._rank_id}: {idx}/{r_idx} is out of {self.rank_info.num_rank_samples}.')
-            idx = (0 if idx < 0 else idx) % self.rank_info.num_rank_samples
+        idx = idx - self._rank_info.rank_start
+        if idx < 0 or idx >= self._rank_info.num_rank_samples:
+            log_str = f'Rank {self._rank_info.rank_id}:'
+            log_str += f' {r_idx}/{idx} is out of {self._rank_info.num_rank_samples}.'
+            Logger().warning(log_str)
+            idx = (0 if idx < 0 else idx) % self._rank_info.num_rank_samples
         sample_out = dict()
-        uni_id, zip_file_idx = self.zip_mapping[idx]
+        uni_id, zip_file_idx = self._zip_mapping[idx]
         for dst_key, src_key in self._cached_kv_pairs.items():
             sample_out = {**sample_out, **self._func_id2file(\
-                self.zip_files[zip_file_idx], uni_id, src_key, dst_key)}
+                self._zip_files[zip_file_idx], uni_id, src_key, dst_key)}
         return sample_out
