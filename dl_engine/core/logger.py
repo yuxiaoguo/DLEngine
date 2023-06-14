@@ -18,7 +18,11 @@ class Logger(metaclass=Singleton):
             name = __name__
         self._log = logging.getLogger(__name__)
         self._log.setLevel(logging.INFO)
-        self._rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+
+    @property
+    def _rank(self):
+        del self
+        return dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
 
     def info(self, msg):
         """
