@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from torch import distributed as dist
-from torch.utils import data
 from torch.utils.data import IterableDataset
 
 from dl_engine.core.register import dataset_register
@@ -60,10 +59,6 @@ class LFSIterableDataset(IterableDataset):
         self._data_root = data_root
         self._used_keys = used_keys
 
-        self._worker_info = data.get_worker_info()
-        self._num_workers = 1 if self._worker_info is None else self._worker_info.num_workers
-        self._worker_id = 0 if self._worker_info is None else self._worker_info.id
-
     def __getitem__(self, index):
         Logger().warning('Not implemented')
         raise NotImplementedError
@@ -77,17 +72,19 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     """
     Large-file-system dataset compatible with sequential protocols.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool) -> None:
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool,
+        shuffle: bool) -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_key = '' if self._seq_mode else '_nonseq'
+        self._shuffle = shuffle
 
         self._data_cfg = self._desc_cfg.props
         self._num_all_samples = self._desc_cfg.total_samples if self._seq_mode else \
             self._desc_cfg.total_nonseq_samples
-        self._num_samples = self._num_all_samples // self._num_workers * \
-            self._num_workers
+        self._num_samples = self._num_all_samples // DistDataUtils.get_rank_all() * \
+            DistDataUtils.get_rank_all()
         Logger().info(f'num_samples: {self._num_samples}/{self._num_all_samples}')
 
         self._prefetch_pool = None
@@ -107,8 +104,13 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         meta_file_offsets.append(getattr(self._desc_cfg, f'total{self._seq_key}_samples'))
         meta_file_offsets = np.asarray(meta_file_offsets)
 
-        worker_start = self._worker_id * self._num_samples // self._num_workers
-        worker_end = (self._worker_id + 1) * self._num_samples // self._num_workers
+        # worker_start = self._worker_id * self._num_samples // self._num_workers
+        # worker_end = (self._worker_id + 1) * self._num_samples // self._num_workers
+        worker_start = DistDataUtils.get_rank_id() * self._num_samples // \
+            DistDataUtils.get_rank_all()
+        worker_end = (DistDataUtils.get_rank_id() + 1) * self._num_samples // \
+            DistDataUtils.get_rank_all()
+        Logger().info(f'worker_start: {worker_start}, worker_end: {worker_end}')
 
         meta_file_start = np.searchsorted(meta_file_offsets, worker_start, side='right') - 1
         meta_file_end = np.searchsorted(meta_file_offsets, worker_end, side='left')
@@ -120,6 +122,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             meta_count = np.minimum(worker_end - meta_file_offsets[i], meta_file_offsets[i + 1] - \
                 meta_file_offsets[i])
             self._meta_file_desc.append((meta_path, meta_begin, meta_count))
+        if self._shuffle:
+            np.random.shuffle(self._meta_file_desc)
         Logger().info(f'meta_file_desc: {self._meta_file_desc}')
 
     def _load_meta(self, meta_path: str):
@@ -128,7 +132,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 meta: dict[str, dict] = pickle.load(meta_stream)
         else:
             raise NotImplementedError
-        data_dict = {}
+        data_dict: dict[str, np.ndarray] = {}
         for _, value in meta.items():
             for key, value in value.items():
                 if key not in self._used_keys.values():
@@ -138,6 +142,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         if not self._seq_mode:
             for key, value in data_dict.items():
                 data_dict[key] = np.concatenate(value, axis=0)
+        if self._shuffle:
+            for key, value in data_dict.items():
+                perm = np.random.permutation(value.shape[0])
+                data_dict[key] = value[perm]
         return data_dict
 
     def _async_fecth(self, *args):
