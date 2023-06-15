@@ -44,10 +44,10 @@ class RankSamplesInfo:
 
     def _init_rank_samples_desc(self, num_all_samples, offsets, meta_files):
         # Calculate the number of samples and the offset
-        self.num_all_samples = num_all_samples
-        self.rank_start = self.rank_id * self.num_all_samples // self.rank_all
-        self.rank_end = (self.rank_id + 1) * self.num_all_samples // self.rank_all
-        self.num_rank_samples = self.rank_end - self.rank_start
+        self.num_rank_samples = num_all_samples // self.rank_all
+        self.num_all_samples = self.num_rank_samples * self.rank_all
+        self.rank_start = self.rank_id * self.num_rank_samples
+        self.rank_end = (self.rank_id + 1) * self.num_rank_samples
         Logger().info(f'Rank {self.rank_id}: {self.num_rank_samples}' +\
             f' between {self.rank_start}-{self.rank_end}')
         all_offset = offsets
@@ -156,6 +156,27 @@ class PartialLFSDataset(data.Dataset):
 
         # Split the used keys into two parts: saved in data and generated runtime.
         self._cached_kv_pairs, self._gen_kv_pairs = self._build_implicit_kv_map()
+
+    @property
+    def rank_info(self):
+        """
+        Return the rank information.
+        """
+        return self._rank_info
+
+    @property
+    def data_desc(self):
+        """
+        Return the data description.
+        """
+        return self._data_desc
+
+    @data_desc.setter
+    def data_desc(self, new_desc):
+        """
+        Set the data description.
+        """
+        self._data_desc = new_desc
 
     def _func_file2zip_ids(self, meta_file: zipfile.ZipFile | dict, zip_cfg: MetaSeqFileDescV0):
         """
