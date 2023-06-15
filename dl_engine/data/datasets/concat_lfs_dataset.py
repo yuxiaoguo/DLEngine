@@ -2,7 +2,6 @@
 Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=no-member,logging-fstring-interpolation
-import torch
 import numpy as np
 from torch.utils import data
 from torch import distributed as dist
