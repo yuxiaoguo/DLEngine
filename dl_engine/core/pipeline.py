@@ -3,7 +3,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=unused-import,logging-fstring-interpolation
 import os
-import datetime
+import re
 import shutil
 import inspect
 from typing import Callable, Optional, Dict, List
@@ -38,7 +38,7 @@ class Pipeline:
         SingletonWriter().initialize(log_dir=log_dir)
         self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
         self._fabric = L.Fabric(precision=self._config.precision)  # type: ignore
-        self._fabric.launch(timeout=datetime.timedelta(seconds=3600))
+        self._fabric.launch()
 
         self._log_dir = log_dir
         self._ckpt_dir = ckpt_dir

@@ -5,19 +5,13 @@ from torch import optim
 from torch.utils import data
 
 from dl_engine.core.logger import Logger
+from dl_engine.utils import Singleton
 
 
-class RegisterModule:
+class RegisterModule(metaclass=Singleton):
     """
     Register a module globally and could be later used by pipeline.
     """
-    _instance = None
-
-    def __new__(cls):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self):
         self._registered_modules = {}
         self._register_existed()
@@ -70,7 +64,10 @@ FunctionalComponmentRegister = type('VisualizerRegister', (RegisterModule,), {})
 
 network_register = NetworkRegister()
 ref_network_register = RefNetworkRegister()
+
 dataset_register = DatasetRegister()
+dataset_register.register(data.ChainDataset)
+
 sampler_register = SamplerRegister()
 functional_register = FunctionalComponmentRegister()
 optimizer_register = OptimizerRegister()
