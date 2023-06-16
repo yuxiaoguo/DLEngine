@@ -7,6 +7,7 @@ import time
 import json
 import pickle
 from typing import Iterator
+from threading import Event
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -85,7 +86,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             self._desc_cfg.total_nonseq_samples
         self._num_samples = self._num_all_samples // DistDataUtils.get_rank_all() * \
             DistDataUtils.get_rank_all()
+        self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
         Logger().info(f'num_samples: {self._num_samples}/{self._num_all_samples}')
+
+        self._write_event = Event()
 
         self._prefetch_pool = None
         self._future = None
@@ -106,10 +110,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         # worker_start = self._worker_id * self._num_samples // self._num_workers
         # worker_end = (self._worker_id + 1) * self._num_samples // self._num_workers
-        worker_start = DistDataUtils.get_rank_id() * self._num_samples // \
-            DistDataUtils.get_rank_all()
-        worker_end = (DistDataUtils.get_rank_id() + 1) * self._num_samples // \
-            DistDataUtils.get_rank_all()
+        worker_start = DistDataUtils.get_rank_id() * self._num_rank_samples
+        worker_end = (DistDataUtils.get_rank_id() + 1) * self._num_rank_samples
         Logger().info(f'worker_start: {worker_start}, worker_end: {worker_end}')
 
         meta_file_start = np.searchsorted(meta_file_offsets, worker_start, side='right') - 1
@@ -132,7 +134,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 meta: dict[str, dict] = pickle.load(meta_stream)
         else:
             raise NotImplementedError
-        data_dict: dict[str, np.ndarray] = {}
+        data_dict = {}
         for _, value in meta.items():
             for key, value in value.items():
                 if key not in self._used_keys.values():
@@ -185,5 +187,5 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         return proc_data
 
     def __iter__(self):
-        for _ in range(self._num_samples):
+        for _ in range(self._num_rank_samples):
             yield self._get_item()
