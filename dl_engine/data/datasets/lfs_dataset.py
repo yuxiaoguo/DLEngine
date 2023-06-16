@@ -68,6 +68,33 @@ class LFSIterableDataset(IterableDataset):
         return super().__iter__()
 
 
+class MetaInstance:
+    """
+    Meta instance.
+    """
+    def __init__(self, meta_data: dict[str, np.ndarray] | None, meta_offset, meta_count) -> None:
+        self._meta_data = meta_data
+        self._meta_offset = meta_offset
+        self._meta_count = meta_count
+
+    def empty(self) -> bool:
+        """
+        Check if the meta instance is empty.
+        """
+        return self._meta_data is None
+
+    def next(self) -> dict[str, np.ndarray]:
+        """
+        Get the next meta instance.
+        """
+        assert self._meta_data is not None
+        next_data = {_k: _v[self._meta_offset] for _k, _v in self._meta_data.items()}
+        self._meta_offset += 1
+        if self._meta_offset >= self._meta_count:
+            self._meta_data = None
+        return next_data
+
+
 @dataset_register.register
 class LFSSeqIterableDataset(LFSIterableDataset):
     """
@@ -97,10 +124,14 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._assign_meta_files()
 
         self._prefetch_metas = list()
-        self._cur_meta = None
         self._next_meta_idx = 0
-        self._cur_meta_offset = 0
-        self._cur_meta_count = 0
+
+        self._cur_meta = MetaInstance(None, 0, 0)
+
+        self._prefetch_event = Event()
+        self._prefetch_event.clear()
+        self._filled_event = Event()
+        self._filled_event.clear()
 
     def _assign_meta_files(self):
         meta_file_offsets = [getattr(_f, f'global{self._seq_key}_offset') \
@@ -108,8 +139,6 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         meta_file_offsets.append(getattr(self._desc_cfg, f'total{self._seq_key}_samples'))
         meta_file_offsets = np.asarray(meta_file_offsets)
 
-        # worker_start = self._worker_id * self._num_samples // self._num_workers
-        # worker_end = (self._worker_id + 1) * self._num_samples // self._num_workers
         worker_start = DistDataUtils.get_rank_id() * self._num_rank_samples
         worker_end = (DistDataUtils.get_rank_id() + 1) * self._num_rank_samples
         Logger().info(f'worker_start: {worker_start}, worker_end: {worker_end}')
@@ -154,32 +183,30 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         del args
         if self._future is not None:
             meta_info = self._meta_file_desc[self._next_meta_idx]
-            self._prefetch_metas.append((self._future.result(), meta_info[1], meta_info[2]))
+            self._prefetch_metas.append(MetaInstance(self._future.result(), *meta_info[1:]))
             self._next_meta_idx += 1
             self._next_meta_idx %= len(self._meta_file_desc)
             self._future = None
+            self._filled_event.set()
+            self._prefetch_event.clear()
 
     def _get_item(self):
         if self._prefetch_pool is None:
             self._prefetch_pool = ThreadPoolExecutor(max_workers=1)
 
-        if self._future is None:
+        if not self._prefetch_event.is_set():
+            self._prefetch_event.set()
             self._future = self._prefetch_pool.submit(self._load_meta, \
                 self._meta_file_desc[self._next_meta_idx][0])
             self._future.add_done_callback(self._async_fecth)
 
-        if self._cur_meta is None:
-            while True:
-                if len(self._prefetch_metas) > 0:
-                    break
-                time.sleep(0.1)
-            self._cur_meta, self._cur_meta_offset, self._cur_meta_count = \
-                self._prefetch_metas.pop(0)
+        if self._cur_meta.empty():
+            self._filled_event.wait()
+            self._cur_meta = self._prefetch_metas.pop(0)
+            if len(self._prefetch_metas) == 0:
+                self._filled_event.clear()
 
-        raw_data = {_k: _v[self._cur_meta_offset] for _k, _v in self._cur_meta.items()}
-        self._cur_meta_offset += 1
-        if self._cur_meta_offset >= self._cur_meta_count:
-            self._cur_meta = None
+        raw_data = self._cur_meta.next()
 
         proc_data = dict()
         for key, value in self._used_keys.items():
