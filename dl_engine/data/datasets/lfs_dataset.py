@@ -3,12 +3,11 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=no-member,logging-fstring-interpolation
 import os
-import time
 import json
 import pickle
 from typing import Iterator
 from threading import Event
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 
 import numpy as np
 from torch import distributed as dist
@@ -119,7 +118,6 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._write_event = Event()
 
         self._prefetch_pool = None
-        self._future = None
 
         self._assign_meta_files()
 
@@ -179,16 +177,13 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 data_dict[key] = value[perm]
         return data_dict
 
-    def _async_fecth(self, *args):
-        del args
-        if self._future is not None:
-            meta_info = self._meta_file_desc[self._next_meta_idx]
-            self._prefetch_metas.append(MetaInstance(self._future.result(), *meta_info[1:]))
-            self._next_meta_idx += 1
-            self._next_meta_idx %= len(self._meta_file_desc)
-            self._future = None
-            self._filled_event.set()
-            self._prefetch_event.clear()
+    def _async_fecth(self, future: Future):
+        meta_info = self._meta_file_desc[self._next_meta_idx]
+        self._prefetch_metas.append(MetaInstance(future.result(), *meta_info[1:]))
+        self._next_meta_idx += 1
+        self._next_meta_idx %= len(self._meta_file_desc)
+        self._filled_event.set()
+        self._prefetch_event.clear()
 
     def _get_item(self):
         if self._prefetch_pool is None:
@@ -196,9 +191,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         if not self._prefetch_event.is_set():
             self._prefetch_event.set()
-            self._future = self._prefetch_pool.submit(self._load_meta, \
+            future = self._prefetch_pool.submit(self._load_meta, \
                 self._meta_file_desc[self._next_meta_idx][0])
-            self._future.add_done_callback(self._async_fecth)
+            future.add_done_callback(self._async_fecth)
 
         if self._cur_meta.empty():
             self._filled_event.wait()
