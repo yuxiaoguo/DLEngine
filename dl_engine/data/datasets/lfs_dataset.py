@@ -126,6 +126,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         self._cur_meta = MetaInstance(None, 0, 0)
 
+        self._max_cached_metas = 3
         self._prefetch_event = Event()
         self._prefetch_event.clear()
         self._filled_event = Event()
@@ -186,18 +187,21 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             self._prefetch_metas.append(fetch_meta)
             self._next_meta_idx += 1
             self._next_meta_idx %= len(self._meta_file_desc)
-        self._filled_event.set()
-        self._prefetch_event.clear()
+            self._filled_event.set()
+            self._prefetch_event.clear()
 
     def _get_item(self):
         if self._prefetch_pool is None:
             self._prefetch_pool = ThreadPoolExecutor(max_workers=1)
 
         if not self._prefetch_event.is_set():
-            self._prefetch_event.set()
-            future = self._prefetch_pool.submit(self._load_meta, \
-                self._meta_file_desc[self._next_meta_idx][0])
-            future.add_done_callback(self._async_fecth)
+            with self._queue_lock:
+                quene_len = len(self._prefetch_metas)
+            if quene_len < self._max_cached_metas:
+                self._prefetch_event.set()
+                future = self._prefetch_pool.submit(self._load_meta, \
+                    self._meta_file_desc[self._next_meta_idx][0])
+                future.add_done_callback(self._async_fecth)
 
         if self._cur_meta.empty():
             self._filled_event.wait()
