@@ -189,7 +189,6 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             self._next_meta_idx %= len(self._meta_file_desc)
             self._filled_event.set()
             self._prefetch_event.clear()
-            Logger().info(f'prefetch queue length: {len(self._prefetch_metas)}')
 
     def _get_item(self):
         if self._prefetch_pool is None:
