@@ -100,11 +100,12 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     Large-file-system dataset compatible with sequential protocols.
     """
     def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool,
-        shuffle: bool) -> None:
+        seq_len: int = 0, shuffle: bool = False) -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_key = '' if self._seq_mode else '_nonseq'
+        self._seq_len = seq_len
         self._shuffle = shuffle
 
         self._data_cfg = self._desc_cfg.props
