@@ -42,4 +42,5 @@ class SequentialDataDescV0:
     props: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        self.meta_files = [MetaSeqFileDescV0(**_meta_file) for _meta_file in self.meta_files]
+        self.meta_files = [MetaSeqFileDescV0(**_meta_file) for _meta_file \
+            in self.meta_files]  # type: ignore
