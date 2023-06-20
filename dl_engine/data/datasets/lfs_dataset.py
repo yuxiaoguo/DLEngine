@@ -6,7 +6,7 @@ import os
 import json
 import pickle
 from typing import Iterator
-from threading import Event
+from threading import Event, Lock
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import numpy as np
@@ -131,6 +131,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._filled_event = Event()
         self._filled_event.clear()
 
+        self._queue_lock = Lock()
+
     def _assign_meta_files(self):
         meta_file_offsets = [getattr(_f, f'global{self._seq_key}_offset') \
             for _f in self._desc_cfg.meta_files]
@@ -179,9 +181,11 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
     def _async_fecth(self, future: Future):
         meta_info = self._meta_file_desc[self._next_meta_idx]
-        self._prefetch_metas.append(MetaInstance(future.result(), *meta_info[1:]))
-        self._next_meta_idx += 1
-        self._next_meta_idx %= len(self._meta_file_desc)
+        fetch_meta = MetaInstance(future.result(), *meta_info[1:])
+        with self._queue_lock:
+            self._prefetch_metas.append(fetch_meta)
+            self._next_meta_idx += 1
+            self._next_meta_idx %= len(self._meta_file_desc)
         self._filled_event.set()
         self._prefetch_event.clear()
 
@@ -197,9 +201,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         if self._cur_meta.empty():
             self._filled_event.wait()
-            self._cur_meta = self._prefetch_metas.pop(0)
-            if len(self._prefetch_metas) == 0:
-                self._filled_event.clear()
+            with self._queue_lock:
+                self._cur_meta = self._prefetch_metas.pop(0)
+                if len(self._prefetch_metas) == 0:
+                    self._filled_event.clear()
 
         raw_data = self._cur_meta.next()
 
