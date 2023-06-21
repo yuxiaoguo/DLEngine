@@ -227,7 +227,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             rand_pos = 0.0
         for key, value in self._used_keys.items():
             key_data = raw_data[value]
-            if self._seq_mode:
+            if self._seq_mode and self._seq_len > 0:
                 if key_data.shape[0] < self._seq_len:
                     pad_shape = [(0, self._seq_len - key_data.shape[0])] + \
                         list((key_data.ndim - 1) * [(0, 0)])
