@@ -100,11 +100,12 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     Large-file-system dataset compatible with sequential protocols.
     """
     def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool,
-        shuffle: bool) -> None:
+        seq_len: int = 0, shuffle: bool = False) -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_key = '' if self._seq_mode else '_nonseq'
+        self._seq_len = seq_len
         self._shuffle = shuffle
 
         self._data_cfg = self._desc_cfg.props
@@ -165,19 +166,26 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             raise NotImplementedError
         data_dict = {}
-        for _, value in meta.items():
-            for key, value in value.items():
-                if key not in self._used_keys.values():
+        for _, m_value in meta.items():
+            for d_key, d_value in m_value.items():
+                if d_key not in self._used_keys.values():
                     continue
-                key_list: list = data_dict.setdefault(key, [])
-                key_list.append(value)
+                key_list: list = data_dict.setdefault(d_key, [])
+                key_list.append(d_value)
         if not self._seq_mode:
-            for key, value in data_dict.items():
-                data_dict[key] = np.concatenate(value, axis=0)
+            for d_key, d_value in data_dict.items():
+                data_dict[d_key] = np.concatenate(d_value, axis=0)
         if self._shuffle:
-            for key, value in data_dict.items():
-                perm = np.random.permutation(value.shape[0])
-                data_dict[key] = value[perm]
+            data_len = len(data_dict[list(data_dict.keys())[0]])
+            perm_ids = np.random.permutation(data_len)
+            for d_key, d_value in data_dict.items():
+                if isinstance(d_value, np.ndarray):
+                    perm_data = d_value[perm_ids]
+                elif isinstance(d_value, list):
+                    perm_data = [d_value[_p] for _p in perm_ids]
+                else:
+                    raise NotImplementedError
+                data_dict[d_key] = perm_data
         return data_dict
 
     def _async_fecth(self, future: Future):
@@ -213,8 +221,22 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         raw_data = self._cur_meta.next()
 
         proc_data = dict()
+        if self._shuffle:
+            rand_pos = np.random.rand()
+        else:
+            rand_pos = 0.0
         for key, value in self._used_keys.items():
-            proc_data[key] = raw_data[value]
+            key_data = raw_data[value]
+            if self._seq_mode:
+                if key_data.shape[0] < self._seq_len:
+                    pad_shape = [(0, self._seq_len - key_data.shape[0])] + \
+                        list((key_data.ndim - 1) * [(0, 0)])
+                    key_data = np.pad(key_data, pad_shape, 'constant', constant_values=0)
+                elif key_data.shape[0] > self._seq_len:
+                    start_pos = int((key_data.shape[0] - self._seq_len) * rand_pos)
+                    end_pos = start_pos + self._seq_len
+                    key_data = key_data[start_pos:end_pos]
+            proc_data[key] = key_data
         return proc_data
 
     def __iter__(self):

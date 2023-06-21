@@ -50,7 +50,7 @@ class BaseIO:
         str_dict['losses'] = self.losses
         str_dict['metrics'] = self.metrics
         return str_dict
-    
+
 
 class TrainState(enum.Enum):
     """
