@@ -1,11 +1,12 @@
 """
 Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
-# pylint: disable=no-member,logging-fstring-interpolation
+# pylint: disable=no-member,logging-fstring-interpolation,eval-used
 import os
 import json
 import pickle
-from typing import Iterator
+from dataclasses import dataclass, field
+from typing import Iterator, Callable
 from threading import Event, Lock
 from concurrent.futures import ThreadPoolExecutor, Future
 
@@ -46,6 +47,18 @@ class DistDataUtils:
         return rank_id
 
 
+@dataclass
+class KeyDataDesc:
+    """
+    Key data description.
+    """
+    raw_key: str
+    transforms: list[Callable] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.transforms = [eval(_t) for _t in self.transforms]
+
+
 @dataset_register.register
 class LFSIterableDataset(IterableDataset):
     """
@@ -57,7 +70,10 @@ class LFSIterableDataset(IterableDataset):
         with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
             self._desc_cfg = desc_type(**json.load(desc_cfg_stream))
         self._data_root = data_root
-        self._used_keys = used_keys
+        self._used_keys = {
+            _k: KeyDataDesc(**_v) if isinstance(_v, dict) else KeyDataDesc(_v) \
+                for _k, _v in used_keys.items()
+        }
 
     def __getitem__(self, index):
         Logger().warning('Not implemented')
@@ -166,9 +182,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             raise NotImplementedError
         data_dict = {}
+        used_raw_keys = [_v.raw_key for _v in self._used_keys.values()]
         for _, m_value in meta.items():
             for d_key, d_value in m_value.items():
-                if d_key not in self._used_keys.values():
+                if d_key not in used_raw_keys:
                     continue
                 key_list: list = data_dict.setdefault(d_key, [])
                 key_list.append(d_value)
@@ -226,7 +243,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             rand_pos = 0.0
         for key, value in self._used_keys.items():
-            key_data = raw_data[value]
+            key_data = raw_data[value.raw_key]
             if self._seq_mode and self._seq_len > 0:
                 if key_data.shape[0] < self._seq_len:
                     pad_shape = [(0, self._seq_len - key_data.shape[0])] + \
@@ -237,6 +254,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                     end_pos = start_pos + self._seq_len
                     key_data = key_data[start_pos:end_pos]
             proc_data[key] = key_data
+        for d_key, d_value in self._used_keys.items():
+            for trans_op in d_value.transforms:
+                proc_data[d_key] = trans_op(proc_data[d_key])
         return proc_data
 
     def __iter__(self):
