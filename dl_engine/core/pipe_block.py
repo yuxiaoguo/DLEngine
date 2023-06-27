@@ -99,15 +99,19 @@ class TrainPipeBlock(PipeBlock):
     A training block in pipeline.
     """
     def __init__(self, dataloader: DataLoader, execution_flow: list[BaseNetwork],
-        optimizer: Optimizer, iter_callbacks: Optional[List] = None,
+        optimizer: Optimizer, iter_callbacks: Optional[List] = None, acc_stride: int = 1,
         saving_dir: Optional[str] = None, fabric=None):
         super().__init__(dataloader, execution_flow, optimizer, iter_callbacks,\
             saving_dir, fabric)
         self.log_writer = SingletonWriter()
+        self._acc_stride = acc_stride
+        self._acc_iter = 0
 
     def run_iter(self, data_in: dict[str, torch.Tensor]):
         assert self._optimizer is not None
         self._optimizer.zero_grad()
+        self._acc_iter += 1
+        self._acc_iter %= self._acc_stride
 
         data_out = self.run_target(self._execution_flow, data_in)
 
@@ -120,7 +124,9 @@ class TrainPipeBlock(PipeBlock):
         else:
             loss_sum = torch.sum(torch.stack(losses))
             loss_sum.backward()
-        self._optimizer.step()
+
+        if self._acc_iter == 0:
+            self._optimizer.step()
 
         return data_out
 
