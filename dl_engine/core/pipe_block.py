@@ -9,6 +9,7 @@ import torch
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from lightning import Fabric
+from lightning.fabric.wrappers import _FabricModule
 
 from .network import BaseNetwork
 from ..callbacks.base import BaseCallback
@@ -113,17 +114,22 @@ class TrainPipeBlock(PipeBlock):
         self._acc_iter += 1
         self._acc_iter %= self._acc_stride
 
-        data_out = self.run_target(self._execution_flow, data_in)
+        if self._fabric is None:
+            data_out = self.run_target(self._execution_flow, data_in)
+            losses = list(data_out['losses'].values())
+            loss_sum = torch.sum(torch.stack(losses))
+            loss_sum.backward()
+            self._optimizer.step()
+            return data_out
 
-        losses = list(data_out['losses'].values())
-
-        if self._fabric is not None:
+        fabric_modules = [_m for _m in self._execution_flow if isinstance(_m, _FabricModule)]
+        assert len(fabric_modules) == 1, 'Only one fabric module is allowed.'
+        with self._fabric.no_backward_sync(fabric_modules[0], enabled=self._acc_iter != 0):
+            data_out = self.run_target(self._execution_flow, data_in)
+            losses = list(data_out['losses'].values())
             with self._fabric.autocast():
                 loss_sum = torch.sum(torch.stack(losses))
             self._fabric.backward(loss_sum)
-        else:
-            loss_sum = torch.sum(torch.stack(losses))
-            loss_sum.backward()
 
         if self._acc_iter == 0:
             self._optimizer.step()
