@@ -3,6 +3,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=no-member
 import enum
+import os
 from abc import abstractmethod
 
 import torch
@@ -109,20 +110,22 @@ class BaseNetwork(Module):
         if not self._initialized:
             self._initialized = True
 
-        if self._weights_path is not None:
+        if self._weights_path is not None and os.path.exists(self._weights_path):
             if self._name is None:
                 raise ValueError('Name must be specified when loading weights')
-            Logger().info(f'{__class__} Loading weights from {self._weights_path}')
+            Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
             weights_dict = torch.load(self._weights_path)
             if self._name in weights_dict:
                 target_name = self._name
-                Logger().info(f'{__class__} Loading weights from {self._weights_path}')
+                Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
             elif 'model_state_dict' in weights_dict:
                 target_name = 'model_state_dict'
-                Logger().info(f'{__class__} Loading weights from legacy dict key')
+                Logger().info(f'{self.__class__} Loading weights from legacy dict key')
             else:
                 raise ValueError(f'Weights for {self._name} not found in {self._weights_path}')
             self.load_state_dict(weights_dict[target_name])
+        else:
+            Logger().info(f'{self.__class__} No weights loaded')
 
         if dist.is_available() and dist.is_initialized():
             self._rank = dist.get_rank()
