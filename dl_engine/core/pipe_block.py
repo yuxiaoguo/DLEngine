@@ -110,7 +110,6 @@ class TrainPipeBlock(PipeBlock):
 
     def run_iter(self, data_in: dict[str, torch.Tensor]):
         assert self._optimizer is not None
-        self._optimizer.zero_grad()
         self._acc_iter += 1
         self._acc_iter %= self._acc_stride
 
@@ -133,6 +132,7 @@ class TrainPipeBlock(PipeBlock):
 
         if self._acc_iter == 0:
             self._optimizer.step()
+            self._optimizer.zero_grad()
 
         return data_out
 
