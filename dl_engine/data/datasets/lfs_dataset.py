@@ -56,7 +56,7 @@ class KeyDataDesc:
     transforms: list[Callable] = field(default_factory=list)
 
     def __post_init__(self):
-        self.transforms = [eval(_t) for _t in self.transforms]
+        self.transforms = [eval(_t) for _t in self.transforms]  # type: ignore
 
 
 @dataset_register.register
@@ -64,7 +64,7 @@ class LFSIterableDataset(IterableDataset):
     """
     Large-file-system dataset.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], desc_type) -> None:
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], desc_type) -> None:
         super().__init__()
         self._desc_cfg_path = os.path.join(data_root, desc_cfg)
         with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
@@ -115,7 +115,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     """
     Large-file-system dataset compatible with sequential protocols.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool,
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], seq_mode: bool,
         seq_len: int = 0, shuffle: bool = False) -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
