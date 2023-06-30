@@ -26,14 +26,33 @@ class BaseConfig(metaclass=Singleton):
         self.envs = os.environ.copy()
 
         envs = local_cfg.pop('envs', dict())
-        for env_key, env_value in envs.items():
-            envs[env_key] = self.parse_args(env_value)
-        self.envs.update(envs)
+        assert isinstance(envs, (dict, list)), f'envs should be dict or list, but got {type(envs)}'
+        if isinstance(envs, list):
+            local_envs = {_k: self.parse_args(_v) for _k, _v in envs}
+        else:
+            local_envs = {_k: self.parse_args(_v) for _k, _v in envs.items()}
+        self.envs.update(local_envs)
 
         for key, value in local_cfg.items():
             if hasattr(self, key):
                 setattr(self, key, self.parse_args(value))
         return self
+
+    def _parse_env_cfg_args(self, arg_str: str, match_str: str) -> str:
+        # if type_src == 'ENV':
+        #     env_str = self.envs.get(type_name, None)
+        #     if env_str is None:
+        #         raise ValueError(f'Unknown env var: {type_name}')
+        #     arg_value = arg_value.replace(f'${tv_pair}$', env_str)
+        if match_str.startswith('ENV'):
+            raise NotImplementedError('ENV not implemented yet')
+        elif match_str.startswith('CFG'):
+            cfg_path = match_str.split(':')[1]
+            with open(cfg_path, 'r', encoding='utf-8') as cfg_stream:
+                cfg_dict = yaml.load(cfg_stream, Loader=yaml.FullLoader)
+        else:
+            raise ValueError(f'Unknown type source: {match_str}')
+        return ''
 
     def parse_args(self, arg_str: str | list | tuple | dict, extra_kwargs: Optional[dict] = None):
         """
@@ -42,28 +61,20 @@ class BaseConfig(metaclass=Singleton):
         if extra_kwargs is None:
             extra_kwargs = dict()
         if isinstance(arg_str, str):
-            type_var_pairs = re.findall(r'\$([A-Za-z0-9\:\_]*)\$', arg_str)
+            type_var_pairs: list[str] = re.findall(r'\$([A-Za-z0-9\:\_\/\.]*)\$', arg_str)
             if not type_var_pairs:
                 return arg_str
             arg_value = arg_str
             for tv_pair in type_var_pairs:
                 tv_part = tv_pair.split(':')
-                if len(tv_part) == 2:
-                    type_src, type_name = tv_part
-                elif len(tv_part) == 1:
-                    type_src = 'MODULE'
-                    type_name, = tv_part
-                else:
-                    raise NotImplementedError(f'Unknown type vars: {tv_pair}')
-                if type_src == 'ENV':
-                    env_str = self.envs.get(type_name, None)
-                    if env_str is None:
-                        raise ValueError(f'Unknown env var: {type_name}')
-                    arg_value = arg_value.replace(f'${tv_pair}$', env_str)
-                elif type_src == 'MODULE':
+                assert len(tv_part) <= 2, f'Invalid type var pair: {tv_pair}'
+                type_name = tv_part[-1]
+                type_src = 'MODULE' if len(tv_part) == 1 else tv_part[0]
+                assert type_src in ['ENV', 'MODULE', 'CFG'], f'Invalid type source: {type_src}'
+                if type_src == 'MODULE':
                     arg_value = extra_kwargs[type_name]
-                else:
-                    raise NotImplementedError(f'Unknown type source: {type_src}')
+                    continue
+                arg_value = self._parse_env_cfg_args(arg_value, tv_pair)
             return arg_value
         elif isinstance(arg_str, list):
             return [self.parse_args(_i, extra_kwargs) for _i in arg_str]
@@ -120,22 +131,7 @@ class PipelineConfig(BaseConfig):
         with open(config_path, 'r', encoding='utf-8') as yaml_file:
             self._raw_config: dict = yaml.safe_load(yaml_file)
 
-        self.save_ckpt = self._raw_config.get('save_ckpt', 0)
-        self.precision = self._raw_config.get('precision', '16-mixed')
-
-        self.set_epoch()
-        self.envs = {**os.environ, **self.envs}
-        for c_key, c_value in self._raw_config.get('envs', dict()).items():
-            self.envs[c_key] = self.parse_args(c_value)
-
-        self.datasets = self._raw_config.get('datasets', dict())
-        self.samplers = self._raw_config.get('samplers', dict())
-        self.dataloaders = self._raw_config.get('dataloaders', dict())
-        self.networks = self._raw_config.get('networks', dict())
-        self.optimizers = self._raw_config.get('optimizers', dict())
-        self.functional_components = self._raw_config.get('functional_components', dict())
-
-        self.pipelines = self._raw_config.get('pipelines', dict())
+        self.load_from_dict(self._raw_config)
         return self
 
     def set_epoch(self, epoch: Optional[int | str] = None):
