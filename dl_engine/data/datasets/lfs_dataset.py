@@ -53,10 +53,11 @@ class KeyDataDesc:
     Key data description.
     """
     raw_key: str
+    dtype: str = 'float32'
     transforms: list[Callable] = field(default_factory=list)
 
     def __post_init__(self):
-        self.transforms = [eval(_t) for _t in self.transforms]
+        self.transforms = [eval(_t) for _t in self.transforms]  # type: ignore
 
 
 @dataset_register.register
@@ -64,7 +65,7 @@ class LFSIterableDataset(IterableDataset):
     """
     Large-file-system dataset.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], desc_type) -> None:
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], desc_type) -> None:
         super().__init__()
         self._desc_cfg_path = os.path.join(data_root, desc_cfg)
         with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
@@ -115,7 +116,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     """
     Large-file-system dataset compatible with sequential protocols.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str], seq_mode: bool,
+    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], seq_mode: bool,
         seq_len: int = 0, shuffle: bool = False) -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
@@ -243,6 +244,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             rand_pos = 0.0
         for key, value in self._used_keys.items():
+            if value.raw_key not in raw_data:
+                proc_data[key] = np.asarray(\
+                    self._data_cfg[value.raw_key], dtype=getattr(np, value.dtype))
+                continue
             key_data = raw_data[value.raw_key]
             if self._seq_mode and self._seq_len > 0:
                 if key_data.shape[0] < self._seq_len:

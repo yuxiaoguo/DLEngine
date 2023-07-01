@@ -74,7 +74,7 @@ class Pipeline:
         for _k, _v in kwargs_dict.items():
             if _k in func_kwargs:
                 Logger().info_zero_rank(f"-- Matched arg: {_k}={_v}")
-                matched_dict[_k] = self._config.parse_args(_v, self._query_target())
+                matched_dict[_k] = self._config.parse_item(_v, self._query_target())
             else:
                 raise ValueError(f'Unmatched arg: {_k}={_v}')
 
