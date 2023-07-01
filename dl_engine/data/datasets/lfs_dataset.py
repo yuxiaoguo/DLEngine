@@ -53,6 +53,7 @@ class KeyDataDesc:
     Key data description.
     """
     raw_key: str
+    dtype: str = 'float32'
     transforms: list[Callable] = field(default_factory=list)
 
     def __post_init__(self):
@@ -243,6 +244,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             rand_pos = 0.0
         for key, value in self._used_keys.items():
+            if value.raw_key not in raw_data:
+                proc_data[key] = np.asarray(\
+                    self._data_cfg[value.raw_key], dtype=getattr(np, value.dtype))
+                continue
             key_data = raw_data[value.raw_key]
             if self._seq_mode and self._seq_len > 0:
                 if key_data.shape[0] < self._seq_len:
