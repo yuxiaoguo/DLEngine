@@ -54,7 +54,7 @@ class BaseConfig(metaclass=Singleton):
         """
         local_cfg = config_dict.copy()
 
-        self.envs = os.environ.copy()
+        self.envs.update(os.environ.copy())
 
         local_envs = local_cfg.pop('envs', dict())
         assert isinstance(local_envs, (dict, list)), \
@@ -196,6 +196,8 @@ class PipelineConfig(BaseConfig):
 
         with open(config_path, 'r', encoding='utf-8') as yaml_file:
             self._raw_config: dict = yaml.safe_load(yaml_file)
+
+        self.set_epoch()
 
         self.load_from_dict(self._raw_config)
         return self
