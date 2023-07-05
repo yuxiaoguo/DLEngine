@@ -55,9 +55,11 @@ class KeyDataDesc:
     raw_key: str
     dtype: str = 'float32'
     transforms: list[Callable] = field(default_factory=list)
+    fetch_transforms: list[Callable] = field(default_factory=list)
 
     def __post_init__(self):
         self.transforms = [eval(_t) for _t in self.transforms]  # type: ignore
+        self.fetch_transforms = [eval(_t) for _t in self.fetch_transforms]  # type: ignore
 
 
 @dataset_register.register
@@ -183,13 +185,16 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             raise NotImplementedError
         data_dict = {}
-        used_raw_keys = [_v.raw_key for _v in self._used_keys.values()]
         for _, m_value in meta.items():
-            for d_key, d_value in m_value.items():
-                if d_key not in used_raw_keys:
+            for u_dst, u_src in self._used_keys.items():
+                if u_src.raw_key not in m_value.keys():
                     continue
-                key_list: list = data_dict.setdefault(d_key, [])
-                key_list.append(d_value)
+                t_value = m_value[u_src.raw_key]
+                if u_src.fetch_transforms is not None:
+                    for f_tran in u_src.fetch_transforms:
+                        t_value = f_tran(t_value)
+                key_list: list = data_dict.setdefault(u_dst, [])
+                key_list.append(t_value)
         if not self._seq_mode:
             for d_key, d_value in data_dict.items():
                 data_dict[d_key] = np.concatenate(d_value, axis=0)
@@ -244,11 +249,11 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             rand_pos = 0.0
         for key, value in self._used_keys.items():
-            if value.raw_key not in raw_data:
+            if key not in raw_data:
                 proc_data[key] = np.asarray(\
                     self._data_cfg[value.raw_key], dtype=getattr(np, value.dtype))
                 continue
-            key_data = raw_data[value.raw_key]
+            key_data = raw_data[key]
             if self._seq_mode and self._seq_len > 0:
                 if key_data.shape[0] < self._seq_len:
                     pad_shape = [(0, self._seq_len - key_data.shape[0])] + \
