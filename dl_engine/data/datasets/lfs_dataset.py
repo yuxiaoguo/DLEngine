@@ -5,6 +5,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 import os
 import json
 import pickle
+import importlib
 from dataclasses import dataclass, field
 from typing import Iterator, Callable
 from threading import Event, Lock
@@ -55,6 +56,7 @@ class KeyDataDesc:
     raw_key: str
     dtype: str = 'float32'
     transforms: list[Callable] = field(default_factory=list)
+    fetch_packages: list[list[str]] = field(default_factory=list)
     fetch_transforms: list[Callable] = field(default_factory=list)
 
     def __post_init__(self):
@@ -135,6 +137,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
         Logger().info(f'num_samples: {self._num_samples}/{self._num_all_samples}')
 
+        # create an empty class
+        self._install_packages()
+
         self._write_event = Event()
 
         self._prefetch_pool = None
@@ -153,6 +158,18 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._filled_event.clear()
 
         self._queue_lock = Lock()
+
+    def _install_packages(self):
+        pkgs_def = list()
+        for _, _v in self._used_keys.items():
+            pkgs_def.extend(_v.fetch_packages)
+        # import module from given packages
+        # e.g. pkgs = [['torch.nn', 'Module']]
+        pkgs = type('CPKGS', (), {})
+        for _p_def in pkgs_def:
+            pkg_module = importlib.import_module(_p_def[0])
+            setattr(pkgs, _p_def[1], getattr(pkg_module, _p_def[1]))
+        globals()['cpkgs'] = pkgs
 
     def _assign_meta_files(self):
         meta_file_offsets = [getattr(_f, f'global{self._seq_key}_offset') \
