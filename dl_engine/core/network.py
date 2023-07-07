@@ -114,7 +114,7 @@ class BaseNetwork(Module):
             if self._name is None:
                 raise ValueError('Name must be specified when loading weights')
             Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
-            weights_dict = torch.load(self._weights_path)
+            weights_dict = torch.load(self._weights_path, map_location='cpu')
             if self._name in weights_dict:
                 target_name = self._name
                 Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
