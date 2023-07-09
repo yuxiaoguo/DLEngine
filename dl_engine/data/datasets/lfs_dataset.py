@@ -12,6 +12,7 @@ from threading import Event, Lock
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import numpy as np
+import torch
 from torch import distributed as dist
 from torch.utils.data import IterableDataset
 
@@ -284,6 +285,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         for d_key, d_value in self._used_keys.items():
             for trans_op in d_value.transforms:
                 proc_data[d_key] = trans_op(proc_data[d_key])
+            proc_data[d_key] = torch.as_tensor(\
+                proc_data[d_key], dtype=getattr(torch, d_value.dtype))
         return proc_data
 
     def __iter__(self):

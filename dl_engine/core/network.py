@@ -115,12 +115,17 @@ class BaseNetwork(Module):
                 raise ValueError('Name must be specified when loading weights')
             Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
             weights_dict = torch.load(self._weights_path, map_location='cpu')
+            near_queries = [_t for _t in weights_dict.keys() \
+                if _t.find(self._name) != -1 or self._name.find(_t) != -1]
             if self._name in weights_dict:
                 target_name = self._name
                 Logger().info(f'{self.__class__} Loading weights from {self._weights_path}')
             elif 'model_state_dict' in weights_dict:
                 target_name = 'model_state_dict'
                 Logger().info(f'{self.__class__} Loading weights from legacy dict key')
+            elif len(near_queries) == 1:
+                target_name = near_queries[0]
+                Logger().info(f'{self.__class__} Loading weights from near query {target_name}')
             else:
                 raise ValueError(f'Weights for {self._name} not found in {self._weights_path}')
             self.load_state_dict(weights_dict[target_name])
