@@ -35,7 +35,7 @@ class BaseOutStream():
         self._out_path_base = out_path_base
 
     @abstractmethod
-    def write(self, data: np.ndarray, name: str) -> None:
+    def write(self, data: np.ndarray | dict, name: str) -> None:
         """
         Write data into output stream.
         """
@@ -57,10 +57,12 @@ class ZipOutStream(BaseOutStream):
         super().__init__(out_path_base)
         self._zip_file = zipfile.ZipFile(f'{self._out_path_base}.zip', "w")
 
-    def write(self, data: np.ndarray, name: str) -> None:
+    def write(self, data: np.ndarray | dict, name: str) -> None:
         """
         Write data into output stream.
         """
+        assert isinstance(data, np.ndarray), \
+            "ZipOutStream only supports numpy.ndarray."
         b_stream = BytesIO()
         np.save(b_stream, data)
         b_stream.seek(0)
@@ -79,9 +81,9 @@ class PickleOutStream(BaseOutStream):
     """
     def __init__(self, out_path_base) -> None:
         super().__init__(out_path_base)
-        self._data_dict: dict[str, np.ndarray] = {}
+        self._data_dict: dict[str, np.ndarray | dict] = {}
 
-    def write(self, data: np.ndarray, name: str) -> None:
+    def write(self, data: np.ndarray | dict, name: str) -> None:
         """
         Write data into output stream.
         """
@@ -152,6 +154,12 @@ class ZipRecorder(BaseCallback):
                         out_path = f'{self._iter:07d}_L{l_idx}_H{h_idx}'
                         self._meta_stream.write(b_np, out_path)
                 self._iter += 1
+        elif isinstance(data, dict):
+            g_data: dict[str, torch.Tensor] = dict(data)
+            c_data = {_k: _v.detach().cpu().numpy() \
+                for _k, _v in g_data.items() if isinstance(_v, torch.Tensor)}
+            self._meta_stream.write(c_data, f'{self._iter:07d}')
+            self._iter += 1
         else:
             raise NotImplementedError
 
