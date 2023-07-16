@@ -203,7 +203,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         else:
             raise NotImplementedError
         data_dict = {}
-        for _, m_value in meta.items():
+        data_names = []
+        for m_name, m_value in meta.items():
             for u_dst, u_src in self._used_keys.items():
                 if u_src.raw_key not in m_value.keys():
                     continue
@@ -213,9 +214,13 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                         t_value = f_tran(t_value)
                 key_list: list = data_dict.setdefault(u_dst, [])
                 key_list.append(t_value)
+            data_names.append(\
+                np.array(np.frombuffer(m_name.encode('utf-8'), dtype=np.uint8)))
         if not self._seq_mode:
             for d_key, d_value in data_dict.items():
                 data_dict[d_key] = np.concatenate(d_value, axis=0)
+        else:
+            data_dict['name'] = data_names
         if self._shuffle:
             data_len = len(data_dict[list(data_dict.keys())[0]])
             perm_ids = np.random.permutation(data_len)

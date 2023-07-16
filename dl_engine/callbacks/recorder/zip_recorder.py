@@ -25,6 +25,7 @@ class DataIO(BaseIO):
     def __init__(self) -> None:
         super().__init__()
         self.data: Optional[torch.Tensor] = None
+        self.data_name: Optional[torch.Tensor] = None
 
 
 class BaseOutStream():
@@ -143,7 +144,12 @@ class ZipRecorder(BaseCallback):
             for b_idx in range(data.shape[0]):
                 b_data = data[b_idx]
                 b_np = b_data.detach().cpu().numpy()
-                self._meta_stream.write(b_np, f'{self._iter:07d}')
+                if io_proto.data_name is not None:
+                    name_uint8 = io_proto.data_name[b_idx].detach().cpu().numpy()
+                    b_name = ''.join([chr(_c) for _c in name_uint8])
+                else:
+                    b_name = f'{self._iter:07d}'
+                self._meta_stream.write(b_np, b_name)
                 self._iter += 1
         elif isinstance(data, list):
             for g_data in zip(*data):
