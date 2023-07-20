@@ -77,6 +77,8 @@ class BaseConfig(metaclass=Singleton):
                 return self._parse_args(arg_str)
             elif isinstance(replace_str, (dict)):
                 return replace_str
+            elif isinstance(replace_str, (int, float)):
+                return replace_str
             else:
                 raise NotImplementedError(f'Unknown type of env: {type(replace_str)}')
         elif match_str.anno_type == EnvAnnoType.CFG:

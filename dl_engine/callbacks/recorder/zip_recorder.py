@@ -145,8 +145,14 @@ class ZipRecorder(BaseCallback):
                 b_data = data[b_idx]
                 b_np = b_data.detach().cpu().numpy()
                 if io_proto.data_name is not None:
-                    name_uint8 = io_proto.data_name[b_idx].detach().cpu().numpy()
-                    b_name = ''.join([chr(_c) for _c in name_uint8])
+                    native_name = io_proto.data_name[b_idx]
+                    if isinstance(native_name, torch.Tensor):
+                        name_uint8 = native_name.detach().cpu().numpy()
+                        b_name = ''.join([chr(_c) for _c in name_uint8])
+                    elif isinstance(native_name, str):
+                        b_name = native_name
+                    else:
+                        raise NotImplementedError
                 else:
                     b_name = f'{self._iter:07d}'
                 self._meta_stream.write(b_np, b_name)
