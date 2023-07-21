@@ -69,6 +69,14 @@ class BaseConfig(metaclass=Singleton):
                 setattr(self, key, self._parse_args(value))
         return self
 
+    def load_from_yaml(self, config_file: str):
+        """
+        Load config from yaml file
+        """
+        with open(config_file, 'r', encoding='utf-8') as yaml_file:
+            config_dict: dict = yaml.safe_load(yaml_file)
+        return self.load_from_dict(config_dict)
+
     def _parse_env_cfg_args(self, arg_str: str, match_str: EnvAnno):
         if match_str.anno_type == EnvAnnoType.ENV:
             replace_str = self.envs[match_str.name]
