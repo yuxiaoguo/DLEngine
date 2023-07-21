@@ -69,7 +69,7 @@ class BaseConfig(metaclass=Singleton):
                 setattr(self, key, self._parse_args(value))
         return self
 
-    def _parse_env_cfg_args(self, arg_str: str, match_str: EnvAnno) -> str:
+    def _parse_env_cfg_args(self, arg_str: str, match_str: EnvAnno):
         if match_str.anno_type == EnvAnnoType.ENV:
             replace_str = self.envs[match_str.name]
             if isinstance(replace_str, str):
@@ -116,6 +116,7 @@ class BaseConfig(metaclass=Singleton):
                     Logger().warning_zero_rank(\
                         f'Using parse_module to importing module - {env_anno.name}')
                     continue
+                assert isinstance(arg_value, str)
                 arg_value = self._parse_env_cfg_args(arg_value, env_anno)
             return arg_value
         elif isinstance(arg_str, list):
@@ -208,7 +209,6 @@ class PipelineConfig(BaseConfig):
         """
         Set epoch
         """
-        # TODO: make me unify with ckpt loader
         if epoch is None:
             if os.path.isdir(self.ckpt_dir):
                 if os.path.exists(os.path.join(self.ckpt_dir, 'final.pt')):
