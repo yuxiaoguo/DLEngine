@@ -62,6 +62,8 @@ DatasetRegister = type('DatasetRegister', (RegisterModule,), {})
 SamplerRegister = type('SamplerRegister', (RegisterModule,), {})
 FunctionalComponmentRegister = type('VisualizerRegister', (RegisterModule,), {})
 
+global_register = RegisterModule()
+
 network_register = NetworkRegister()
 ref_network_register = RefNetworkRegister()
 

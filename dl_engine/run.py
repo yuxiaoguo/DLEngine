@@ -10,14 +10,26 @@ from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
 
 
-def scanning_user_registered_modules():
+def scanning_user_registered_modules(cwd=None, registery_cands=None):
     """
     Scanning user registered modules.
     """
-    cwd = os.getcwd()
+    if cwd is None:
+        cwd = os.getcwd()
+
+    if registery_cands is None:
+        registery_cands = [
+            'network_register',
+            'ref_network_register',
+            'dataset_register',
+            'sampler_register',
+            'functional_register',
+            'optimizer_register',
+            'dataloader_register'
+        ]
 
     # Get all python files and folders in the current directory recursively.
-    py_files = list()
+    py_files: list[str] = list()
     for root, _, files in os.walk(cwd):
         for file in files:
             if not file.endswith('.py'):
@@ -25,18 +37,9 @@ def scanning_user_registered_modules():
             py_path = os.path.join(root, file)
             registery = False
             with open(py_path, 'r', encoding='utf-8') as p_fp:
-                registery_cands = [
-                    'network_register',
-                    'ref_network_register',
-                    'dataset_register',
-                    'sampler_register',
-                    'functional_register',
-                    'optimizer_register',
-                    'dataloader_register'
-                ]
                 for line in p_fp.readlines():
                     for registery_cand in registery_cands:
-                        if registery_cand in line:
+                        if registery_cand in line and line.startswith('@'):
                             registery = True
                             break
                     if registery:
