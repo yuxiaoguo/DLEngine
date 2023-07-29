@@ -209,7 +209,7 @@ class Pipeline:
         """
         for epoch in range(self._start_epoch, self._config.pipelines['num_times']):
             Logger().info_zero_rank(f'Epoch: {epoch + 1}')
-            if epoch == 0:
+            if epoch == 0 and self._config.save_ckpt and self._rank == 0:
                 self._save_ckpt(0)
             for block in self._blocks:
                 block.run_epoch(epoch_idx=epoch)
