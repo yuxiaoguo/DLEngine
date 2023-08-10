@@ -157,7 +157,7 @@ class Pipeline:
         Load checkpoint.
         """
         Logger().info(f'Loading checkpoint from {self._ckpt_dir}')
-        ckpt_dir = self._ckpt_dir
+        ckpt_dir: str = self._ckpt_dir
         if os.path.isdir(ckpt_dir):
             existed_files = os.listdir(ckpt_dir)
             if 'epoch_state' in existed_files and 'latest.pt' in existed_files:
@@ -167,7 +167,7 @@ class Pipeline:
             else:
                 Logger().info('No checkpoint found, start from scratch.')
                 return
-        elif os.path.exists(ckpt_dir):
+        elif os.path.exists(ckpt_dir) and ckpt_dir.endswith('.pt'):
             self._start_epoch = 0
             ckpt_path = ckpt_dir
         else:
