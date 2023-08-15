@@ -25,6 +25,7 @@ class DataIO(BaseIO):
     def __init__(self) -> None:
         super().__init__()
         self.data: Optional[torch.Tensor] = None
+        self.data_mask: torch.Tensor | None = None
         self.data_name: Optional[torch.Tensor] = None
 
 
@@ -94,8 +95,10 @@ class PickleOutStream(BaseOutStream):
         """
         Close the output stream.
         """
+        sorted_keys = sorted(list(self._data_dict.keys()))
+        sorted_data_dict = {_k: self._data_dict[_k] for _k in sorted_keys}
         with open(f'{self._out_path_base}.pkl', 'wb') as pkl_stream:
-            pickle.dump(self._data_dict, pkl_stream)
+            pickle.dump(sorted_data_dict, pkl_stream)
         self._data_dict = {}
 
 
@@ -142,8 +145,10 @@ class ZipRecorder(BaseCallback):
             data = data.reshape([data.shape[0], -1, *self.last_shape])
         if isinstance(data, torch.Tensor):
             for b_idx in range(data.shape[0]):
-                b_data = data[b_idx]
-                b_np = b_data.detach().cpu().numpy()
+                b_np: np.ndarray = data[b_idx].detach().cpu().numpy()
+                if io_proto.data_mask is not None:
+                    b_mask = io_proto.data_mask[b_idx].detach().cpu().numpy()
+                    b_np = b_np[b_mask > 0]
                 if io_proto.data_name is not None:
                     native_name = io_proto.data_name[b_idx]
                     if isinstance(native_name, torch.Tensor):

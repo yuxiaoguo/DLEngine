@@ -6,6 +6,7 @@ import os
 import json
 import pickle
 import importlib
+import enum
 from dataclasses import dataclass, field
 from typing import Iterator, Callable
 from threading import Event, Lock
@@ -47,6 +48,16 @@ class DistDataUtils:
         else:
             rank_id = 0
         return rank_id
+
+
+class RankMethod(enum.Enum):
+    """
+    Rank method for samples from a prefetch file
+    """
+    ORIGIN = enum.auto()
+    RANDOM = enum.auto()
+    SEQ_LEN_ASC = enum.auto()
+    SEQ_LEN_DESC = enum.auto()
 
 
 @dataclass
@@ -122,13 +133,16 @@ class LFSSeqIterableDataset(LFSIterableDataset):
     Large-file-system dataset compatible with sequential protocols.
     """
     def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], seq_mode: bool,
-        seq_len: int = 0, shuffle: bool = False) -> None:
+        seq_len: int = 0, shuffle: bool = False, rank_method: str = 'Origin') -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._seq_mode = seq_mode
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_key = '' if self._seq_mode else '_nonseq'
         self._seq_len = seq_len
         self._shuffle = shuffle
+        if self._shuffle:
+            self._rank_method = RankMethod.RANDOM
+        self._rank_method = RankMethod[rank_method.upper()]
 
         self._data_cfg = self._desc_cfg.props
         self._num_all_samples = self._desc_cfg.total_samples if self._seq_mode else \
@@ -221,9 +235,20 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 data_dict[d_key] = np.concatenate(d_value, axis=0)
         else:
             data_dict['name'] = data_names
-        if self._shuffle:
-            data_len = len(data_dict[list(data_dict.keys())[0]])
-            perm_ids = np.random.permutation(data_len)
+
+        if self._rank_method != RankMethod.ORIGIN:
+            if self._rank_method == RankMethod.SEQ_LEN_ASC or \
+                self._rank_method == RankMethod.SEQ_LEN_DESC:
+                key_name = list(self._used_keys.keys())[0]
+                seq_len = [len(_s) for _s in data_dict[key_name]]
+                perm_ids = np.argsort(seq_len)
+                if self._rank_method == RankMethod.SEQ_LEN_DESC:
+                    perm_ids = perm_ids[::-1]
+            elif self._rank_method == RankMethod.RANDOM:
+                data_len = len(data_dict[list(data_dict.keys())[0]])
+                perm_ids = np.random.permutation(data_len)
+            else:
+                raise NotImplementedError
             for d_key, d_value in data_dict.items():
                 if isinstance(d_value, np.ndarray):
                     perm_data = d_value[perm_ids]
@@ -232,6 +257,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 else:
                     raise NotImplementedError
                 data_dict[d_key] = perm_data
+
         return data_dict
 
     def _async_fecth(self, future: Future):
