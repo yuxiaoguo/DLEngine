@@ -153,6 +153,29 @@ class BaseNetwork(Module):
         """
         raise NotImplementedError
 
+    def parse_input(self, inputs: dict[str, torch.Tensor]):
+        """
+        Parse the input tensors
+        """
+        parsed_dict = dict()
+        for in_name, in_tensor in inputs.items():
+            if in_name not in self._in_descs.keys():
+                continue
+            parsed_dict[self._in_descs[in_name]] = in_tensor
+        return parsed_dict
+
+    def parse_output(self, outputs: dict[str, torch.Tensor]):
+        """
+        Parse the output tensors
+        """
+        parsed_dict = dict()
+        for out_name, out_tensor in outputs.items():
+            if out_name not in self._out_descs.values():
+                continue
+            raw_name, = [_k for _k, _v in self._out_descs.items() if _v == out_name]
+            parsed_dict[raw_name] = out_tensor
+        return parsed_dict
+
     def forward(self, inputs: dict[str, torch.Tensor], **extra_kwargs):  # pylint: disable=redefined-builtin
         """
         Forward function.
@@ -188,3 +211,37 @@ class RefNetwork(BaseNetwork):
 
     def _run(self, io_proto: BaseIO, **extra_kwargs) -> BaseIO:
         return self._ref(io_proto, **extra_kwargs)
+
+
+@network_register.register
+class SequentialNetwork(BaseNetwork):
+    """
+    Sequential execution of networks with auto I/O parsing
+    """
+    def __init__(self,
+                 streams: list[BaseNetwork],
+                 with_mediates: bool = False,
+                 in_descs=None,
+                 out_descs=None,
+                 weights_path=None,
+                 io_type=BaseIO,
+                 name=None,
+                 trainable=None) -> None:
+        super().__init__(in_descs, out_descs, weights_path, io_type, name, trainable)
+        self._streams = streams
+        self._with_mediates = with_mediates
+
+        self._io_type = type('SequentialIO', (BaseIO,), dict(
+            **{_k: None for _k in self._in_descs.values()},
+            **{_k: None for _k in self._out_descs.values()},
+        ))
+
+    def _run(self, io_proto: BaseIO, **extra_kwargs) -> BaseIO:
+        io_dict = io_proto.convert_to_str_dict(self._in_descs)
+        for stream in self._streams:
+            out_dict = \
+                stream.parse_output(stream(stream.parse_input(io_dict), **extra_kwargs))
+            io_dict.update(out_dict)
+        for out_name in self._out_descs.values():
+            if out_name in io_dict:
+                setattr(io_proto, out_name, io_dict[out_name])
