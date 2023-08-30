@@ -90,11 +90,13 @@ class Experiment:
         self._ckpts_path = os.path.join(self._exp_path, 'ckpts')
         self._config_path = os.path.join(self._exp_path, 'configs')
         self._reports_path = os.path.join(self._exp_path, 'reports')
+        self._analysis_path = os.path.join(self._exp_path, 'analysis')
         folders.append(self._profiles_path)
         folders.append(self._logs_path)
         folders.append(self._ckpts_path)
         folders.append(self._config_path)
         folders.append(self._reports_path)
+        folders.append(self._analysis_path)
 
         # Check if the experiment exists
         if not create:
@@ -117,6 +119,20 @@ class Experiment:
         Returns the analysis directory.
         """
         return self._reports_path
+
+    @property
+    def milestone(self) -> str:
+        """
+        Returns the milestone of the experiment.
+        """
+        return self._milestone
+
+    @property
+    def task(self) -> str:
+        """
+        Returns the task of the experiment.
+        """
+        return self._task
 
     def _fetch_by_exp_id(self, exp_id) -> tuple[str, str, str]:
         """
