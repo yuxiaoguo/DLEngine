@@ -107,6 +107,13 @@ class Experiment:
                 os.makedirs(folder, exist_ok=True)
 
     @property
+    def analysis_path(self) -> str:
+        """
+        Returns the analysis directory.
+        """
+        return self._analysis_path
+
+    @property
     def profiles_path(self) -> str:
         """
         Returns the profiles directory.
@@ -155,3 +162,9 @@ class Experiment:
         assert len(exp_infos) == 1, \
             f'Expect one experiment with ID {exp_id}, but got {len(exp_infos)}'
         return exp_infos[0]
+
+    def get_rel_path(self, path: str):
+        """
+        Get the relative path of a file or directory.
+        """
+        return os.path.relpath(path, GlobalEnvs().exp_root)
