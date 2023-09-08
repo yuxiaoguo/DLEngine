@@ -20,7 +20,7 @@ from torch.utils.data import IterableDataset
 from dl_engine.core.register import dataset_register
 from dl_engine.core.logger import Logger
 
-from ..protocols import SequentialDataDescV0
+from ..protocols import SequentialDataDescV0, MetaSeqFileDescV0
 
 
 class DistDataUtils:
@@ -127,40 +127,64 @@ class MetaInstance:
         return next_data
 
 
+@dataclass
+class LFSMetaDesc:
+    """
+    Meta description for LFS dataset.
+
+    Args:
+        pieces_offset: the start global offset of pieces for each sequence. The
+            shape is (num_sequences + 1, ). The last element is the total number
+            of pieces.
+    """
+    pieces_offset: np.ndarray
+
+
 @dataset_register.register
 class LFSSeqIterableDataset(LFSIterableDataset):
     """
     Large-file-system dataset compatible with sequential protocols.
     """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], seq_mode: bool,
-        seq_len: int = 0, shuffle: bool = False, rank_method: str = 'Origin') -> None:
+    def __init__(self,
+                 data_root,
+                 desc_cfg,
+                 used_keys: dict[str, str | dict],
+                 seq_mode: bool = True,
+                 seq_len: int = 0,
+                 seq_split: int = 0,
+                 seq_offset: int = 0,
+                 shuffle: bool = False,
+                 rank_method: str = 'Origin') -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
-        self._seq_mode = seq_mode
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
-        self._seq_key = '' if self._seq_mode else '_nonseq'
         self._seq_len = seq_len
+        self._seq_split = seq_split
+        self._seq_offset = seq_offset
         self._shuffle = shuffle
-        if self._shuffle:
-            self._rank_method = RankMethod.RANDOM
         self._rank_method = RankMethod[rank_method.upper()]
 
+        # Support legacy settings, will be deprecated in the future
+        if self._shuffle:
+            self._rank_method = RankMethod.RANDOM
+        if not seq_mode:
+            assert seq_split <= 1, 'seq_split should be less than 1 in legacy seq mode'
+            self._seq_split = 1
+
         self._data_cfg = self._desc_cfg.props
-        self._num_all_samples = self._desc_cfg.total_samples if self._seq_mode else \
-            self._desc_cfg.total_nonseq_samples
-        self._num_samples = self._num_all_samples // DistDataUtils.get_rank_all() * \
-            DistDataUtils.get_rank_all()
-        self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
-        Logger().info(f'num_samples: {self._num_samples}/{self._num_all_samples}')
+
+        # self._num_all_samples = self._calculate_total_samples()
+        # self._num_samples = self._num_all_samples // DistDataUtils.get_rank_all() * \
+        #     DistDataUtils.get_rank_all()
+        # self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
+        # self._assign_meta_files()
+        self._meta_file_descs, self._num_rank_samples = \
+            self._distributed_samples_assignment(self._desc_cfg.meta_files)
+        Logger().info(f'num_samples: {self._num_rank_samples}')
 
         # create an empty class
         self._install_packages()
 
-        self._write_event = Event()
-
         self._prefetch_pool = None
-
-        self._assign_meta_files()
-
         self._prefetch_metas = list()
         self._next_meta_idx = 0
 
@@ -171,20 +195,72 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._prefetch_event.clear()
         self._filled_event = Event()
         self._filled_event.clear()
-
         self._queue_lock = Lock()
 
-    def _install_packages(self):
-        pkgs_def = list()
-        for _, _v in self._used_keys.items():
-            pkgs_def.extend(_v.fetch_packages)
-        # import module from given packages
-        # e.g. pkgs = [['torch.nn', 'Module']]
-        pkgs = type('CPKGS', (), {})
-        for _p_def in pkgs_def:
-            pkg_module = importlib.import_module(_p_def[0])
-            setattr(pkgs, _p_def[1], getattr(pkg_module, _p_def[1]))
-        globals()['cpkgs'] = pkgs
+    def _distributed_samples_assignment(self, meta_files_cfg: list[MetaSeqFileDescV0]):
+        """
+        Assign samples to each rank. 
+        The whole dataset is consisted of several meta files.
+            For each meta file, it contains a dictionary of sequences. Each sequence has
+            variable length of frames. During runtime, the sequence will be split into
+            several pieces with fixed length. For each rank, it needs to ensure that the
+            number of samples is evenly seen by all ranks. Based on this, the needed 
+            meta files and the corresponding number of samples will be assigned to each
+            rank.
+
+        Returns:
+            meta_file_desc: list of tuple (meta_file_path, meta_begin, meta_count), where
+                the meta_file_path is the path of meta file, meta_begin is the begin index
+                of the meta file, meta_count is the number of samples in the meta file.
+            num_rank_samples: number of samples for each rank.
+        """
+        # Prerequisite
+        assert self._seq_split >= 0, 'seq_split should be greater than 0'
+
+        # Step 1: calculate the number of samples for each meta file
+        num_pieces_all_metas: list[int] = list()
+        desc_all_metas: list[LFSMetaDesc] = list()
+        for meta_file_cfg in meta_files_cfg:
+            if self._seq_split == 0:
+                # sequence split equals to 0 means no sequence split
+                num_pieces_all_seqs = np.ones_like(meta_file_cfg.num_nonseq_samples)
+                raise NotImplementedError('Untested code')
+            else:
+                num_frames_all_seqs = np.diff(np.concatenate(\
+                    [meta_file_cfg.local_nonseq_offset, [meta_file_cfg.num_nonseq_samples]]))
+                rest_seqs = num_frames_all_seqs % self._seq_split
+                num_pieces_all_seqs = np.maximum(\
+                    (num_frames_all_seqs - self._seq_split * 0.5 + 1) // self._seq_split, 1)
+            offset_pieces_all_seqs = np.concatenate([[0], np.cumsum(num_pieces_all_seqs)])
+
+            lfs_mata_desc = LFSMetaDesc(pieces_offset=offset_pieces_all_seqs)
+            num_pieces_all_metas.append(offset_pieces_all_seqs[-1])
+            desc_all_metas.append(lfs_mata_desc)
+
+        # Step 2: calculate the number of samples for each rank
+        num_pieces_all_metas = np.asarray(num_pieces_all_metas)
+        num_all_samples = np.sum(num_pieces_all_metas)
+        num_rank_samples = num_all_samples // DistDataUtils.get_rank_all()
+        return [], num_rank_samples
+
+    def _calculate_total_samples(self) -> int:
+        """
+        Calculate the total number of samples based on sequence split.
+        """
+        if self._seq_split <= 0:
+            return self._desc_cfg.total_samples
+
+        all_meta_num_pieces = list()
+        for meta_file in self._desc_cfg.meta_files:
+            meta_file: MetaSeqFileDescV0 = meta_file
+            num_samples = np.diff(np.concatenate(\
+                [meta_file.local_nonseq_offset, [meta_file.num_nonseq_samples]]))
+            init_offset = self._seq_split - self._seq_offset
+            num_pieces = (num_samples - init_offset) // self._seq_offset + 1
+            all_meta_num_pieces.append(num_pieces)
+
+        all_num_pieces = np.sum([np.sum(_p) for _p in all_meta_num_pieces])
+        return all_num_pieces
 
     def _assign_meta_files(self):
         meta_file_offsets = [getattr(_f, f'global{self._seq_key}_offset') \
@@ -209,6 +285,18 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         if self._shuffle:
             np.random.shuffle(self._meta_file_desc)
         Logger().info(f'meta_file_desc: {self._meta_file_desc}')
+
+    def _install_packages(self):
+        pkgs_def = list()
+        for _, _v in self._used_keys.items():
+            pkgs_def.extend(_v.fetch_packages)
+        # import module from given packages
+        # e.g. pkgs = [['torch.nn', 'Module']]
+        pkgs = type('CPKGS', (), {})
+        for _p_def in pkgs_def:
+            pkg_module = importlib.import_module(_p_def[0])
+            setattr(pkgs, _p_def[1], getattr(pkg_module, _p_def[1]))
+        globals()['cpkgs'] = pkgs
 
     def _load_meta(self, meta_path: str):
         if meta_path.endswith('.pkl'):
