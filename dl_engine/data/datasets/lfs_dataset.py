@@ -32,22 +32,24 @@ class DistDataUtils:
         """
         Get the number of all ranks.
         """
-        if dist.is_available() and dist.is_initialized():
-            rank_all = dist.get_world_size()
-        else:
-            rank_all = 1
-        return rank_all
+        # if dist.is_available() and dist.is_initialized():
+        #     rank_all = dist.get_world_size()
+        # else:
+        #     rank_all = 1
+        # return rank_all
+        return 4
 
     @staticmethod
     def get_rank_id() -> int:
         """
         Get the rank id.
         """
-        if dist.is_available() and dist.is_initialized():
-            rank_id = dist.get_rank()
-        else:
-            rank_id = 0
-        return rank_id
+        # if dist.is_available() and dist.is_initialized():
+        #     rank_id = dist.get_rank()
+        # else:
+        #     rank_id = 0
+        # return rank_id
+        return 1
 
 
 class RankMethod(enum.Enum):
@@ -290,7 +292,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             offset_pieces_all_metas, rank_sample_start, side='right') - 1
         meta_end_idx = np.searchsorted(\
             offset_pieces_all_metas, rank_sample_end, side='left')
-        desc_rank_metas = list()
+        desc_rank_metas: list[LFSMetaDesc] = list()
         for idx in range(meta_start_idx, meta_end_idx):
             raw_meta_cfg = desc_all_metas[idx]
             desc_rank_meta = LFSMetaDesc(pieces_offset=raw_meta_cfg.pieces_offset, \
@@ -299,14 +301,15 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 os.path.join(self._data_root, meta_files_cfg[idx].meta_file)
             desc_rank_meta.seq_begin = \
                 np.maximum(rank_sample_start - offset_pieces_all_metas[idx], 0)
-            desc_rank_meta.seq_count = \
+            seq_end = \
                 np.minimum(rank_sample_end - offset_pieces_all_metas[idx], \
                     offset_pieces_all_metas[idx + 1] - offset_pieces_all_metas[idx])
+            desc_rank_meta.seq_count = seq_end - desc_rank_meta.seq_begin
             desc_rank_metas.append(desc_rank_meta)
-        rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_all_metas]
+        rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
         Logger().info(f'rank_metas: {rank_meta_files}')
-        rank_meta_offsets = [_m.seq_begin for _m in desc_all_metas]
-        rank_meta_counts = [_m.seq_count for _m in desc_all_metas]
+        rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
+        rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
         Logger().info(f'meta_start/count: {rank_meta_offsets}/{rank_meta_counts}')
         return desc_rank_metas, num_rank_samples
 
