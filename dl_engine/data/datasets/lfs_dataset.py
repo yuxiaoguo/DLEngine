@@ -290,27 +290,32 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             offset_pieces_all_metas, rank_sample_start, side='right') - 1
         meta_end_idx = np.searchsorted(\
             offset_pieces_all_metas, rank_sample_end, side='left')
+        desc_rank_metas = list()
         for idx in range(meta_start_idx, meta_end_idx):
-            desc_all_metas[idx].file_path = \
+            raw_meta_cfg = desc_all_metas[idx]
+            desc_rank_meta = LFSMetaDesc(pieces_offset=raw_meta_cfg.pieces_offset, \
+                random_range=raw_meta_cfg.random_range, file_path=meta_files_cfg[idx].meta_file)
+            desc_rank_meta.file_path = \
                 os.path.join(self._data_root, meta_files_cfg[idx].meta_file)
-            desc_all_metas[idx].seq_begin = \
+            desc_rank_meta.seq_begin = \
                 np.maximum(rank_sample_start - offset_pieces_all_metas[idx], 0)
-            desc_all_metas[idx].seq_count = \
+            desc_rank_meta.seq_count = \
                 np.minimum(rank_sample_end - offset_pieces_all_metas[idx], \
                     offset_pieces_all_metas[idx + 1] - offset_pieces_all_metas[idx])
+            desc_rank_metas.append(desc_rank_meta)
         rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_all_metas]
         Logger().info(f'rank_metas: {rank_meta_files}')
         rank_meta_offsets = [_m.seq_begin for _m in desc_all_metas]
         rank_meta_counts = [_m.seq_count for _m in desc_all_metas]
         Logger().info(f'meta_start/count: {rank_meta_offsets}/{rank_meta_counts}')
-        return desc_all_metas, num_rank_samples
+        return desc_rank_metas, num_rank_samples
 
     def _load_meta(self, meta_path: str):
         if meta_path.endswith('.pkl'):
             with open(meta_path, 'rb') as meta_stream:
                 meta: dict[str, dict] = pickle.load(meta_stream)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f'Unsupported meta file: {meta_path}')
         data_dict = {}
         data_names = []
         for m_name, m_value in meta.items():
