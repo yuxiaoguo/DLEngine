@@ -32,24 +32,22 @@ class DistDataUtils:
         """
         Get the number of all ranks.
         """
-        # if dist.is_available() and dist.is_initialized():
-        #     rank_all = dist.get_world_size()
-        # else:
-        #     rank_all = 1
-        # return rank_all
-        return 4
+        if dist.is_available() and dist.is_initialized():
+            rank_all = dist.get_world_size()
+        else:
+            rank_all = 1
+        return rank_all
 
     @staticmethod
     def get_rank_id() -> int:
         """
         Get the rank id.
         """
-        # if dist.is_available() and dist.is_initialized():
-        #     rank_id = dist.get_rank()
-        # else:
-        #     rank_id = 0
-        # return rank_id
-        return 1
+        if dist.is_available() and dist.is_initialized():
+            rank_id = dist.get_rank()
+        else:
+            rank_id = 0
+        return rank_id
 
 
 class RankMethod(enum.Enum):
