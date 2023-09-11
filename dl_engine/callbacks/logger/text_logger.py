@@ -3,6 +3,8 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 from typing import Dict, List
 
+import torch
+
 from dl_engine.core.logger import Logger
 from dl_engine.core.register import functional_register
 from ..base import BaseCallback, BaseIO
@@ -26,7 +28,10 @@ class ProgressTextLogger(BaseCallback):
         for l_name, l_tenor in iter_out.losses.items():
             self._loss_recorder.setdefault(l_name, list()).append(l_tenor.item())
         for m_name, m_tenor in iter_out.metrics.items():
-            self._metric_recorder.setdefault(m_name, list()).append(m_tenor.item())
+            if m_tenor.numel() == 1:
+                self._metric_recorder.setdefault(m_name, list()).append(m_tenor.item())
+            else:
+                self._metric_recorder.setdefault(m_name, list()).append(torch.mean(m_tenor).item())
 
     def _gen_out_str(self):
         out_loss_str = ' - '.join(
