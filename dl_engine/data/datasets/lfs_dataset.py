@@ -100,12 +100,14 @@ class MetaInstance:
     def __init__(self,
                  meta_data: dict[str, np.ndarray] | None,
                  meta_cfg: LFSMetaDesc,
-                 shuffle=False,
-                 piece_len=0) -> None:
+                 shuffle: bool,
+                 piece_len: int,
+                 seq_offset: int) -> None:
         self._meta_data = meta_data
         self._meta_cfg = meta_cfg
         self._shuffle = shuffle
         self._piece_len = piece_len
+        self._seq_offset = seq_offset
 
         self._cur_idx = 0
         self._index_map = np.arange(meta_cfg.seq_count) + meta_cfg.seq_begin
@@ -128,8 +130,11 @@ class MetaInstance:
             self._meta_cfg.pieces_offset, sel_idx, side='right') - 1
         if self._piece_len > 0:
             seq_bias = sel_idx - self._meta_cfg.pieces_offset[seq_idx]
-            rand_bias = np.random.randint(0, self._meta_cfg.random_range[seq_idx])
-            seq_start = seq_bias * self._piece_len + rand_bias
+            if self._shuffle:
+                const_bias = np.random.randint(0, self._meta_cfg.random_range[seq_idx])
+            else:
+                const_bias = self._seq_offset
+            seq_start = seq_bias * self._piece_len + const_bias
             seq_end = seq_start + self._piece_len
             next_data = {_k: _v[seq_idx][seq_start:seq_end] for _k, _v in self._meta_data.items()}
             next_data['name'] = self._meta_data['name'][seq_idx] + f'_p{seq_bias}'
@@ -195,6 +200,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             assert seq_split <= 1, 'seq_split should be less than 1 in legacy seq mode'
             self._seq_split = 1
 
+        if self._seq_offset > 0:
+            assert not self._shuffle, 'seq_offset should be less than 0 in shuffle mode'
+
         self._data_cfg = self._desc_cfg.props
 
         # self._num_all_samples = self._calculate_total_samples()
@@ -213,7 +221,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._prefetch_metas = list()
         self._next_meta_idx = 0
 
-        self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle)
+        self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
 
         self._max_cached_metas = 3
         self._prefetch_event = Event()
@@ -352,7 +360,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
     def _async_fecth(self, future: Future):
         meta_cfg = self._meta_file_descs[self._next_meta_idx]
-        fetch_meta = MetaInstance(future.result(), meta_cfg, self._shuffle, self._seq_split)
+        fetch_meta = MetaInstance(\
+            future.result(), meta_cfg, self._shuffle, self._seq_split, self._seq_offset)
         with self._queue_lock:
             self._prefetch_metas.append(fetch_meta)
             self._next_meta_idx += 1

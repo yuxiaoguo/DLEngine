@@ -38,5 +38,7 @@ class ScalarVisualizer(BaseVisualizer):
             scalars = dict(default=scalars)
         assert isinstance(scalars, dict), f'Input scalars should be a dict, but got {type(scalars)}'
         for key, value in scalars.items():
+            if value.numel() > 1:
+                value = torch.mean(value)
             self._writer.writer.add_scalar(key, value, self._writer.iter)
         self._iter += 1
