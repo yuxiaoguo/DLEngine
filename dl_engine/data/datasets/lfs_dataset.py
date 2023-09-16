@@ -137,7 +137,8 @@ class MetaInstance:
             seq_start = seq_bias * self._piece_len + const_bias
             seq_end = seq_start + self._piece_len
             next_data = {_k: _v[seq_idx][seq_start:seq_end] for _k, _v in self._meta_data.items()}
-            next_data['name'] = self._meta_data['name'][seq_idx] + f'_p{seq_bias}'
+            next_data['name'] = self._meta_data['name'][seq_idx] + \
+                f'_s{self._seq_offset}_p{seq_bias}'
         else:
             next_data = {_k: _v[seq_idx] for _k, _v in self._meta_data.items()}
         self._cur_idx += 1

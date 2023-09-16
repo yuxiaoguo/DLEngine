@@ -83,7 +83,7 @@ class BaseConfig(metaclass=Singleton):
             if isinstance(replace_str, str):
                 arg_str = arg_str.replace(f'${match_str.anno_str}$', str(replace_str))
                 return self._parse_args(arg_str)
-            elif isinstance(replace_str, (dict)):
+            elif isinstance(replace_str, (dict, list)):
                 return replace_str
             elif isinstance(replace_str, (int, float)):
                 return replace_str
