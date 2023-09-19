@@ -137,6 +137,8 @@ class TrainPipeBlock(PipeBlock):
         return data_out
 
     def run_epoch(self, epoch_idx):
+        for _flow in self._execution_flow:
+            _flow.train()
         self._run_callbacks_before_epoch()
         for iter_idx, iter_data in enumerate(self._dataloader):
             out_data = self.run_iter(iter_data)
@@ -153,19 +155,23 @@ class TestPipeBlock(PipeBlock):
         iter_callbacks: Optional[list] = None, saving_dir: Optional[str] = None,
         fabric: Optional[Fabric]=None):
         super().__init__(dataloader, execution_flow, None, iter_callbacks, saving_dir, fabric)
-        for _flow in self._execution_flow:
-            _flow.eval()
 
-        self.log_writer = SingletonWriter()
+        # self.log_writer = SingletonWriter()
 
     def run_iter(self, data_in):
         data_out = self.run_target(self._execution_flow, data_in)
         return data_out
 
     def run_epoch(self, epoch_idx):
-        self._run_callbacks_before_epoch()
-        for iter_idx, iter_data in enumerate(self._dataloader):
-            out_data = self.run_iter(iter_data)
-            self. _run_callbacks(iter_idx, {**iter_data, **out_data})
-            self.log_writer.update_iter()
-        self._run_callbacks_after_epoch()
+        for _flow in self._execution_flow:
+            _flow.eval()
+        with torch.no_grad():
+            self._run_callbacks_before_epoch()
+            for iter_idx, iter_data in enumerate(self._dataloader):
+                out_data = self.run_iter(iter_data)
+                self. _run_callbacks(iter_idx, {**iter_data, **out_data})
+                # self.log_writer.update_iter()
+            self._run_callbacks_after_epoch()
+
+
+ValidatePipeBlock = TestPipeBlock

@@ -212,6 +212,7 @@ class Pipeline:
             if epoch == 0 and self._config.save_ckpt and self._rank == 0:
                 self._save_ckpt(0)
             for block in self._blocks:
+                Logger().info_zero_rank(f'-- Block: {block.__class__.__name__}')
                 block.run_epoch(epoch_idx=epoch)
             if self._config.save_ckpt and self._rank == 0:
                 self._save_ckpt(epoch + 1)
