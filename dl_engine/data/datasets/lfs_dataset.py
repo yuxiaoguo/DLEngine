@@ -7,6 +7,7 @@ import json
 import pickle
 import importlib
 import enum
+import logging
 from dataclasses import dataclass, field
 from typing import Iterator, Callable
 from threading import Event, Lock
@@ -15,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 import numpy as np
 import torch
 from torch import distributed as dist
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, get_worker_info
 
 from dl_engine.core.register import dataset_register
 from dl_engine.core.logger import Logger
@@ -211,25 +212,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         #     DistDataUtils.get_rank_all()
         # self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
         # self._assign_meta_files()
-        self._meta_file_descs, self._num_rank_samples = \
-            self._distributed_samples_assignment(self._desc_cfg.meta_files)
-        Logger().info(f'num_samples: {self._num_rank_samples}')
+        self._meta_file_descs, self._num_rank_samples = None, None
 
         # create an empty class
         self._install_packages()
-
-        self._prefetch_pool = None
-        self._prefetch_metas = list()
-        self._next_meta_idx = 0
-
-        self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
-
-        self._max_cached_metas = 3
-        self._prefetch_event = Event()
-        self._prefetch_event.clear()
-        self._filled_event = Event()
-        self._filled_event.clear()
-        self._queue_lock = Lock()
 
     def _install_packages(self):
         pkgs_def = list()
@@ -287,13 +273,25 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             desc_all_metas.append(lfs_mata_desc)
 
         # Step 2: calculate the number of samples for each rank
+        num_devices = DistDataUtils.get_rank_all()
+        rank_device = DistDataUtils.get_rank_id()
+        work_info = get_worker_info()
+        if work_info is None:
+            num_workers = 1
+            rank_worker = 0
+        else:
+            num_workers = work_info.num_workers
+            rank_worker = work_info.id
+        total_splits = num_devices * num_workers
+        rank_split = rank_device * num_workers + rank_worker
+
         num_pieces_all_metas = np.asarray(num_pieces_all_metas)
         num_all_samples = np.sum(num_pieces_all_metas)
-        num_rank_samples = num_all_samples // DistDataUtils.get_rank_all()
+        num_rank_samples = num_all_samples // total_splits
 
         # Step 3: assign meta files to each rank
-        rank_sample_start = DistDataUtils.get_rank_id() * num_rank_samples
-        rank_sample_end = (DistDataUtils.get_rank_id() + 1) * num_rank_samples
+        rank_sample_start = rank_split * num_rank_samples
+        rank_sample_end = (rank_split + 1) * num_rank_samples
         offset_pieces_all_metas = np.concatenate([[0], np.cumsum(num_pieces_all_metas)])
         meta_start_idx = np.searchsorted(\
             offset_pieces_all_metas, rank_sample_start, side='right') - 1
@@ -314,10 +312,12 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             desc_rank_meta.seq_count = seq_end - desc_rank_meta.seq_begin
             desc_rank_metas.append(desc_rank_meta)
         rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
-        Logger().info(f'rank_metas: {rank_meta_files}')
+        Logger().info(f'Rank D{rank_device}W{rank_worker} - metas: {rank_meta_files}')
         rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
         rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
-        Logger().info(f'meta_start/count: {rank_meta_offsets}/{rank_meta_counts}')
+        out_str = f'Rank D{rank_device}W{rank_worker} '
+        out_str += f'start/count: {rank_meta_offsets}/{rank_meta_counts}'
+        Logger().info(out_str)
         return desc_rank_metas, num_rank_samples
 
     def _load_meta(self, meta_path: str):
@@ -409,5 +409,23 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         return proc_data
 
     def __iter__(self):
+        if self._meta_file_descs is None or self._num_rank_samples is None:
+            logging.basicConfig(level=logging.INFO)
+            self._meta_file_descs, self._num_rank_samples = \
+                self._distributed_samples_assignment(self._desc_cfg.meta_files)
+            Logger().info(f'num_samples: {self._num_rank_samples}')
+            self._prefetch_pool = None
+            self._prefetch_metas = list()
+            self._next_meta_idx = 0
+
+            self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
+
+            self._max_cached_metas = 3
+            self._prefetch_event = Event()
+            self._prefetch_event.clear()
+            self._filled_event = Event()
+            self._filled_event.clear()
+            self._queue_lock = Lock()
+
         for _ in range(self._num_rank_samples):
             yield self._get_item()
