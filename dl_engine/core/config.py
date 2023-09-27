@@ -80,15 +80,10 @@ class BaseConfig(metaclass=Singleton):
     def _parse_env_cfg_args(self, arg_str: str, match_str: EnvAnno):
         if match_str.anno_type == EnvAnnoType.ENV:
             replace_str = self.envs[match_str.name]
-            if isinstance(replace_str, str):
-                arg_str = arg_str.replace(f'${match_str.anno_str}$', str(replace_str))
-                return self._parse_args(arg_str)
-            elif isinstance(replace_str, (dict, list)):
+            if arg_str == f'${match_str.anno_str}$':
                 return replace_str
-            elif isinstance(replace_str, (int, float)):
-                return replace_str
-            else:
-                raise NotImplementedError(f'Unknown type of env: {type(replace_str)}')
+            arg_str = arg_str.replace(f'${match_str.anno_str}$', str(replace_str))
+            return self._parse_args(arg_str)
         elif match_str.anno_type == EnvAnnoType.CFG:
             with open(match_str.name, 'r', encoding='utf-8') as cfg_stream:
                 cfg_dict = yaml.load(cfg_stream, Loader=yaml.FullLoader)
@@ -124,7 +119,7 @@ class BaseConfig(metaclass=Singleton):
                     Logger().warning_zero_rank(\
                         f'Using parse_module to importing module - {env_anno.name}')
                     continue
-                assert isinstance(arg_value, str)
+                # assert isinstance(arg_value, str)
                 arg_value = self._parse_env_cfg_args(arg_value, env_anno)
             return arg_value
         elif isinstance(arg_str, list):

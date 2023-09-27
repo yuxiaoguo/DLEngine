@@ -107,6 +107,13 @@ class Experiment:
                 os.makedirs(folder, exist_ok=True)
 
     @property
+    def config_path(self) -> str:
+        """
+        Returns the configuration directory.
+        """
+        return self._config_path
+
+    @property
     def analysis_path(self) -> str:
         """
         Returns the analysis directory.
