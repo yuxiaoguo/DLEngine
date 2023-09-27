@@ -185,6 +185,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                  seq_len: int = 0,
                  seq_split: int = 0,
                  seq_offset: int = 0,
+                 max_num_samples: int = 0,
                  shuffle: bool = False,
                  rank_method: str = 'Origin') -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
@@ -192,6 +193,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._seq_len = seq_len
         self._seq_split = seq_split
         self._seq_offset = seq_offset
+        self._max_num_samples = max_num_samples
         self._shuffle = shuffle
         self._rank_method = RankMethod[rank_method.upper()]
 
@@ -426,6 +428,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             self._filled_event = Event()
             self._filled_event.clear()
             self._queue_lock = Lock()
+
+        if self._max_num_samples > 0:
+            self._num_rank_samples = min(self._max_num_samples, self._num_rank_samples)
 
         for _ in range(self._num_rank_samples):
             yield self._get_item()
