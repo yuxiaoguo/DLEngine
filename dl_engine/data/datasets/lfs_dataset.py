@@ -68,13 +68,15 @@ class KeyDataDesc:
     """
     raw_key: str
     dtype: str = 'float32'
+    data_pkg: str | None = None
+    preloaded: bool = False
     transforms: list[Callable] = field(default_factory=list)
     fetch_packages: list[list[str]] = field(default_factory=list)
     fetch_transforms: list[Callable] = field(default_factory=list)
 
-    def __post_init__(self):
-        self.transforms = [eval(_t) for _t in self.transforms]  # type: ignore
-        self.fetch_transforms = [eval(_t) for _t in self.fetch_transforms]  # type: ignore
+    # def __post_init__(self):
+    #     self.transforms = [eval(_t) for _t in self.transforms]  # type: ignore
+    #     self.fetch_transforms = [eval(_t) for _t in self.fetch_transforms]  # type: ignore
 
 
 @dataclass
@@ -142,6 +144,7 @@ class MetaInstance:
                 f'_s{self._seq_offset}_p{seq_bias}'
         else:
             next_data = {_k: _v[seq_idx] for _k, _v in self._meta_data.items()}
+        next_data['seq_name'] = self._meta_data['name'][seq_idx]
         self._cur_idx += 1
         if self._cur_idx >= self._meta_cfg.seq_count:
             self._meta_data = None
@@ -197,6 +200,11 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._shuffle = shuffle
         self._rank_method = RankMethod[rank_method.upper()]
 
+        self._preloaded_data = dict()
+        self._data_cfg = self._desc_cfg.props
+
+        self._logged = False
+
         # Support legacy settings, will be deprecated in the future
         if self._shuffle:
             self._rank_method = RankMethod.RANDOM
@@ -207,17 +215,22 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         if self._seq_offset > 0:
             assert not self._shuffle, 'seq_offset should be less than 0 in shuffle mode'
 
-        self._data_cfg = self._desc_cfg.props
-
-        # self._num_all_samples = self._calculate_total_samples()
-        # self._num_samples = self._num_all_samples // DistDataUtils.get_rank_all() * \
-        #     DistDataUtils.get_rank_all()
-        # self._num_rank_samples = self._num_samples // DistDataUtils.get_rank_all()
-        # self._assign_meta_files()
         self._meta_file_descs, self._num_rank_samples = None, None
+
+        self._prefetch_pool = None
+        self._prefetch_metas = list()
+        self._next_meta_idx = 0
+        self._cur_meta = None
+        self._max_cached_metas = 3
+        self._prefetch_event = None
+        self._filled_event = None
+        self._queue_lock = None
 
         # create an empty class
         self._install_packages()
+
+        # preloading data
+        self._preloading_data()
 
     def _install_packages(self):
         pkgs_def = list()
@@ -230,6 +243,17 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             pkg_module = importlib.import_module(_p_def[0])
             setattr(pkgs, _p_def[1], getattr(pkg_module, _p_def[1]))
         globals()['cpkgs'] = pkgs
+
+    def _preloading_data(self):
+        for used_key, used_value in self._used_keys.items():
+            if not used_value.preloaded:
+                continue
+            assert used_value.data_pkg is not None, \
+                f'Package for {used_key} is not specified'
+            with open(os.path.join(self._data_root, used_value.data_pkg), 'rb') as data_stream:
+                data_dict: dict = pickle.load(data_stream)
+            for d_key, d_value in data_dict.items():
+                self._preloaded_data.setdefault(d_key, dict())[used_key] = d_value[used_key]
 
     def _distributed_samples_assignment(self, meta_files_cfg: list[MetaSeqFileDescV0]) -> \
         tuple[list[LFSMetaDesc], int]:
@@ -397,8 +421,11 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         proc_data = dict()
         for key, value in self._used_keys.items():
             if key not in raw_data:
-                proc_data[key] = np.asarray(\
-                    self._data_cfg[value.raw_key], dtype=getattr(np, value.dtype))
+                if self._used_keys[key].preloaded:
+                    proc_data[key] = self._preloaded_data[raw_data['seq_name']][key]
+                else:
+                    proc_data[key] = np.asarray(\
+                        self._data_cfg[value.raw_key], dtype=getattr(np, value.dtype))
                 continue
             proc_data[key] = raw_data[key]
         for d_key, d_value in self._used_keys.items():
@@ -410,24 +437,37 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 proc_data[d_key], dtype=getattr(torch, d_value.dtype))
         return proc_data
 
-    def __iter__(self):
-        if self._meta_file_descs is None or self._num_rank_samples is None:
+    def _lazy_init(self):
+        """
+        Lazy initialization for multi-processing.
+        """
+        if not self._logged:
             logging.basicConfig(level=logging.INFO)
             self._meta_file_descs, self._num_rank_samples = \
                 self._distributed_samples_assignment(self._desc_cfg.meta_files)
             Logger().info(f'num_samples: {self._num_rank_samples}')
-            self._prefetch_pool = None
-            self._prefetch_metas = list()
-            self._next_meta_idx = 0
+            self._logged = True
 
-            self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
+        self._prefetch_pool = None
+        self._prefetch_metas = list()
+        self._next_meta_idx = 0
 
-            self._max_cached_metas = 3
-            self._prefetch_event = Event()
-            self._prefetch_event.clear()
-            self._filled_event = Event()
-            self._filled_event.clear()
-            self._queue_lock = Lock()
+        self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
+
+        self._max_cached_metas = 3
+        self._prefetch_event = Event()
+        self._prefetch_event.clear()
+        self._filled_event = Event()
+        self._filled_event.clear()
+        self._queue_lock = Lock()
+
+        for _, value in self._used_keys.items():
+            value.transforms = [eval(_t) for _t in value.transforms]
+            value.fetch_transforms = [eval(_t) for _t in value.fetch_transforms]
+
+    def __iter__(self):
+        if self._meta_file_descs is None or self._num_rank_samples is None:
+            self._lazy_init()
 
         if self._max_num_samples > 0:
             self._num_rank_samples = min(self._max_num_samples, self._num_rank_samples)
