@@ -71,14 +71,20 @@ class BaseNetwork(Module):
     def __init__(self, in_descs=None, out_descs=None, weights_path=None,
         io_type=BaseIO, name=None, trainable=None) -> None:
         super().__init__()
-        if __class__.IO_INTERFACE != BaseIO:
-            assert io_type == BaseIO, 'IO type must be BaseIO when IO_INTERFACE is not BaseIO'
-            io_type = __class__.IO_INTERFACE
+        if self.__class__.IO_INTERFACE != BaseIO:
+            assert io_type == BaseIO or self.__class__.IO_INTERFACE == io_type,\
+                'IO type must be BaseIO when IO_INTERFACE is not BaseIO'
+            io_type = self.__class__.IO_INTERFACE
         self._io_type = io_type
         self._weights_path = weights_path
         self._name = name
-        self._trainable: TrainState = TrainState[trainable] if trainable is not None \
-            else TrainState.TRAINABLE
+        if isinstance(trainable, str):
+            trainable = TrainState[trainable.upper()]
+        elif isinstance(trainable, TrainState):
+            pass
+        elif trainable is None:
+            trainable = TrainState.TRAINABLE
+        self._trainable: TrainState = trainable
 
         self._initialized = False
         self._rank = 0

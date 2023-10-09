@@ -116,10 +116,7 @@ class BaseConfig(metaclass=Singleton):
             env_annos = self._acquire_anno_type(arg_value)
             for env_anno in env_annos:
                 if env_anno.anno_type == EnvAnnoType.MODULE:
-                    Logger().warning_zero_rank(\
-                        f'Using parse_module to importing module - {env_anno.name}')
                     continue
-                # assert isinstance(arg_value, str)
                 arg_value = self._parse_env_cfg_args(arg_value, env_anno)
             return arg_value
         elif isinstance(arg_str, list):
@@ -129,7 +126,6 @@ class BaseConfig(metaclass=Singleton):
         elif isinstance(arg_str, dict):
             dict_str = dict()
             for _ik, _iv in arg_str.items():
-                print(_ik, _iv)
                 dict_str[_ik] = self._parse_args(_iv, extra_kwargs)
             return dict_str
         elif isinstance(arg_str, (int, float)):

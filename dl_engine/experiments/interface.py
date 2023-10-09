@@ -114,6 +114,20 @@ class Experiment:
         return self._config_path
 
     @property
+    def logs_path(self) -> str:
+        """
+        Returns the logs directory.
+        """
+        return self._logs_path
+
+    @property
+    def ckpts_path(self) -> str:
+        """
+        Returns the checkpoints directory.
+        """
+        return self._ckpts_path
+
+    @property
     def analysis_path(self) -> str:
         """
         Returns the analysis directory.
