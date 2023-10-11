@@ -20,6 +20,7 @@ class SingletonWriter:
         """
         self._writer = SummaryWriter(log_dir=log_dir)  # pylint: disable=attribute-defined-outside-init
         self._iter = 0  # pylint: disable=attribute-defined-outside-init
+        self._epoch = 0  # pylint: disable=attribute-defined-outside-init
 
     @property
     def writer(self):
@@ -35,8 +36,21 @@ class SingletonWriter:
         """
         return self._iter
 
+    @property
+    def epoch(self):
+        """
+        Get the epoch number
+        """
+        return self._epoch
+
     def update_iter(self, tick=1):
         """
         Update the iteration number
         """
         self._iter += tick
+
+    def update_epoch(self, tick=1):
+        """
+        Update the epoch number
+        """
+        self._epoch += tick

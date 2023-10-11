@@ -53,8 +53,7 @@ class ScalarVisualizer(BaseVisualizer):
 
     def close(self) -> None:
         super().close()
-        if self._epoch_stat:
-            for key, value in self._scalars.items():
-                mean_scalar = np.mean(value)
-                self._writer.writer.add_scalar(\
-                    f'{self._tag}/{key}', mean_scalar, self._writer.iter)
+        for key, value in self._scalars.items():
+            mean_scalar = np.mean(value)
+            self._writer.writer.add_scalar(\
+                f'{self._tag}/{key}_epoch', mean_scalar, self._writer.epoch)
