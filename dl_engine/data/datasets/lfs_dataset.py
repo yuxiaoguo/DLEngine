@@ -337,13 +337,13 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                     offset_pieces_all_metas[idx + 1] - offset_pieces_all_metas[idx])
             desc_rank_meta.seq_count = seq_end - desc_rank_meta.seq_begin
             desc_rank_metas.append(desc_rank_meta)
-        rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
-        Logger().info(f'Rank D{rank_device}W{rank_worker} - metas: {rank_meta_files}')
-        rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
-        rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
-        out_str = f'Rank D{rank_device}W{rank_worker} '
-        out_str += f'start/count: {rank_meta_offsets}/{rank_meta_counts}'
-        Logger().info(out_str)
+        # rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
+        # Logger().info(f'Rank D{rank_device}W{rank_worker} - metas: {rank_meta_files}')
+        # rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
+        # rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
+        # out_str = f'Rank D{rank_device}W{rank_worker} '
+        # out_str += f'start/count: {rank_meta_offsets}/{rank_meta_counts}'
+        # Logger().info(out_str)
         return desc_rank_metas, num_rank_samples
 
     def _load_meta(self, meta_path: str):
