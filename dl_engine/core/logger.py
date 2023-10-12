@@ -49,3 +49,16 @@ class Logger(metaclass=Singleton):
         """
         if self._rank == 0:
             self.warning(msg)
+
+    def debug(self, msg):
+        """
+        Log debug message.
+        """
+        self._log.debug(f'Rank {self._rank}: {msg}')
+
+    def debug_zero_rank(self, msg):
+        """
+        Log debug message from rank 0.
+        """
+        if self._rank == 0:
+            self.debug(msg)
