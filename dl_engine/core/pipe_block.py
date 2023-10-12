@@ -145,6 +145,7 @@ class TrainPipeBlock(PipeBlock):
             self._run_callbacks(iter_idx, {**iter_data, **out_data})
             self.log_writer.update_iter()
         self._run_callbacks_after_epoch()
+        self.log_writer.update_epoch()
 
 
 class TestPipeBlock(PipeBlock):
