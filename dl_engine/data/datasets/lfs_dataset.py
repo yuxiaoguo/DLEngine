@@ -445,7 +445,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             logging.basicConfig(level=logging.INFO)
             self._meta_file_descs, self._num_rank_samples = \
                 self._distributed_samples_assignment(self._desc_cfg.meta_files)
-            Logger().info(f'num_samples: {self._num_rank_samples}')
+            Logger().debug(f'num_samples: {self._num_rank_samples}')
             self._logged = True
 
         self._prefetch_pool = None
