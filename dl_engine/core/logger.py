@@ -17,7 +17,7 @@ class Logger(metaclass=Singleton):
         if name is None:
             name = __name__
         self._log = logging.getLogger(__name__)
-        self._log.setLevel(logging.INFO)
+        # self._log.setLevel(logging.INFO)
 
     @property
     def _rank(self):
