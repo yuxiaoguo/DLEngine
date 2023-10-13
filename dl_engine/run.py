@@ -53,12 +53,15 @@ def scanning_user_registered_modules(cwd=None, registery_cands=None):
 if __name__ == '__main__':
     scanning_user_registered_modules()
 
-    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_path', type=str, help='Path to the train.yaml.')
     parser.add_argument('--log_dir', type=str, help='Path to the log directory.')
     parser.add_argument('--ckpt_dir', type=str, help='Path to the checkpoint directory.')
     parser.add_argument('--prof_dir', type=str, help='Path to the profiler directory.')
+    parser.add_argument('--log_level', type=str, default='INFO', help='Log level.')
     args = parser.parse_args()
+
+    log_level = getattr(logging, args.log_level.upper())
+    logging.basicConfig(level=log_level, handlers=[logging.StreamHandler()])
     pipe_core = Pipeline(args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir)
     pipe_core.run()

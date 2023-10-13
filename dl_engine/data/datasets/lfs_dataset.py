@@ -187,17 +187,21 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                  seq_mode: bool = True,
                  seq_len: int = 0,
                  seq_split: int = 0,
+                 overlap_ratio: float = 0.5,
                  seq_offset: int = 0,
                  max_num_samples: int = 0,
                  shuffle: bool = False,
+                 log_level: str = 'INFO',
                  rank_method: str = 'Origin') -> None:
         super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_len = seq_len
         self._seq_split = seq_split
+        self._overlap_ratio = overlap_ratio
         self._seq_offset = seq_offset
         self._max_num_samples = max_num_samples
         self._shuffle = shuffle
+        self._log_level = log_level.upper()
         self._rank_method = RankMethod[rank_method.upper()]
 
         self._preloaded_data = dict()
@@ -288,7 +292,8 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 num_frames_all_seqs = np.diff(np.concatenate(\
                     [meta_file_cfg.local_nonseq_offset, [meta_file_cfg.num_nonseq_samples]]))
                 num_pieces_all_seqs = np.maximum(\
-                    0, (num_frames_all_seqs + int(0.5 * self._seq_split)) // self._seq_split - 1)
+                    0, (num_frames_all_seqs + int(self._overlap_ratio * self._seq_split))\
+                    // self._seq_split - 1)
                 rand_range_all_seqs = np.maximum(0, num_frames_all_seqs - \
                     num_pieces_all_seqs * self._seq_split)
             offset_pieces_all_seqs = np.concatenate([[0], np.cumsum(num_pieces_all_seqs)])
@@ -337,13 +342,14 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                     offset_pieces_all_metas[idx + 1] - offset_pieces_all_metas[idx])
             desc_rank_meta.seq_count = seq_end - desc_rank_meta.seq_begin
             desc_rank_metas.append(desc_rank_meta)
-        # rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
-        # Logger().info(f'Rank D{rank_device}W{rank_worker} - metas: {rank_meta_files}')
-        # rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
-        # rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
-        # out_str = f'Rank D{rank_device}W{rank_worker} '
-        # out_str += f'start/count: {rank_meta_offsets}/{rank_meta_counts}'
-        # Logger().info(out_str)
+        rank_meta_files = [os.path.basename(_m.file_path) for _m in desc_rank_metas]
+        Logger().debug(f'Rank D{rank_device}W{rank_worker} - num_samples: {num_rank_samples}')
+        Logger().debug(f'Rank D{rank_device}W{rank_worker} - metas: {rank_meta_files}')
+        rank_meta_offsets = [_m.seq_begin for _m in desc_rank_metas]
+        rank_meta_counts = [_m.seq_count for _m in desc_rank_metas]
+        out_str = f'Rank D{rank_device}W{rank_worker} '
+        out_str += f'start/count: {rank_meta_offsets}/{rank_meta_counts}'
+        Logger().debug(out_str)
         return desc_rank_metas, num_rank_samples
 
     def _load_meta(self, meta_path: str):
@@ -442,10 +448,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         Lazy initialization for multi-processing.
         """
         if not self._logged:
-            logging.basicConfig(level=logging.INFO)
+            logging.basicConfig(level=getattr(logging, self._log_level))
             self._meta_file_descs, self._num_rank_samples = \
                 self._distributed_samples_assignment(self._desc_cfg.meta_files)
-            Logger().debug(f'num_samples: {self._num_rank_samples}')
             self._logged = True
 
         self._prefetch_pool = None
