@@ -173,7 +173,7 @@ class Pipeline:
         else:
             Logger().info('No checkpoint found, start from scratch.')
             return
-        ckpt: Dict = torch.load(ckpt_path)
+        ckpt: Dict = torch.load(ckpt_path, map_location='cpu')
         for _k, _v in ckpt.items():
             if _k in self._networks:
                 Logger().info(f'Loading network: {_k}')
