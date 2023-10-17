@@ -5,6 +5,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 from typing import Dict
 
 import torch
+from torch import distributed as dist
 import numpy as np
 
 from dl_engine.core.register import functional_register
@@ -32,6 +33,9 @@ class ScalarVisualizer(BaseVisualizer):
         self._epoch_stat = epoch_stat
         self._scalars: dict[str, list] = dict()
 
+    def _is_global_sync(self):
+        return dist.is_available() and dist.is_initialized()
+
     def reset(self) -> None:
         super().reset()
         self._scalars = dict()
@@ -46,13 +50,19 @@ class ScalarVisualizer(BaseVisualizer):
         for key, value in scalars.items():
             if value.numel() > 1:
                 value = torch.mean(value)
-            self._scalars.setdefault(key, []).append(value.item())
-            if not self._epoch_stat and self._iter % self._stride == 0:
-                self._writer.writer.add_scalar(f'{self._tag}/{key}', value, self._writer.iter)
+                if self._is_global_sync():
+                    dist.all_reduce(value, op=dist.ReduceOp.SUM)
+                    value /= dist.get_world_size()
+            if self._rank == 0:
+                self._scalars.setdefault(key, []).append(value.item())
+                if not self._epoch_stat and self._iter % self._stride == 0:
+                    self._writer.writer.add_scalar(f'{self._tag}/{key}', value, self._writer.iter)
         self._iter += 1
 
     def close(self) -> None:
         super().close()
+        if self._rank > 0:
+            return
         for key, value in self._scalars.items():
             mean_scalar = np.mean(value)
             self._writer.writer.add_scalar(\
