@@ -92,7 +92,7 @@ class BaseConfig(metaclass=Singleton):
             raise ValueError(f'Unknown type source: {match_str}')
 
     def _acquire_anno_type(self, arg_str: str) -> list[EnvAnno]:
-        type_var_pairs: list[str] = re.findall(r'\$([A-Za-z0-9\:\_\/\.]*)\$', arg_str)
+        type_var_pairs: list[str] = re.findall(r'\$([A-Za-z0-9\:\_\/\.\&]*)\$', arg_str)
         if not type_var_pairs:
             return list()
         env_annos = list()

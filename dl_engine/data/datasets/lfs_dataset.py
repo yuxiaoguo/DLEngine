@@ -358,13 +358,32 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                 meta: dict[str, dict] = pickle.load(meta_stream)
         else:
             raise NotImplementedError(f'Unsupported meta file: {meta_path}')
+
+        # Fetch data from separate data packages
+        attached_metas = dict()
+        key_metas_dict: dict[str, dict] = dict()  # The used key name and its belonging meta
+        for _, u_value in self._used_keys.items():
+            if u_value.data_pkg is not None and not u_value.preloaded:
+                meta_name = os.path.splitext(os.path.basename(meta_path))[0]
+                _, meta_index = meta_name.split('_')
+                attached_file = u_value.data_pkg.replace('*', meta_index)
+                if attached_file not in attached_metas:
+                    with open(os.path.join(os.path.dirname(\
+                        meta_path), attached_file), 'rb') as data_stream:
+                        attached_metas[attached_file] = pickle.load(data_stream)
+                key_metas_dict[u_value.raw_key] = \
+                    {_k: _v[u_value.raw_key] for _k, _v in attached_metas[attached_file].items()}
+
         data_dict = {}
         data_names = []
         for m_name, m_value in meta.items():
             for u_dst, u_src in self._used_keys.items():
                 if u_src.raw_key not in m_value.keys():
-                    continue
-                t_value = m_value[u_src.raw_key]
+                    if u_src.raw_key not in key_metas_dict:
+                        continue
+                    t_value = key_metas_dict[u_src.raw_key][m_name]
+                else:
+                    t_value = m_value[u_src.raw_key]
                 if u_src.fetch_transforms is not None:
                     for f_tran in u_src.fetch_transforms:
                         t_value = f_tran(t_value)
