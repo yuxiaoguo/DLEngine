@@ -365,7 +365,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         for _, u_value in self._used_keys.items():
             if u_value.data_pkg is not None and not u_value.preloaded:
                 meta_name = os.path.splitext(os.path.basename(meta_path))[0]
-                _, meta_index = meta_name.split('_')
+                meta_index = meta_name.split('_')[-1]
                 attached_file = u_value.data_pkg.replace('*', meta_index)
                 if attached_file not in attached_metas:
                     with open(os.path.join(os.path.dirname(\
