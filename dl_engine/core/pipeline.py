@@ -143,7 +143,8 @@ class Pipeline:
             self._optimizers[key] = self._fabric.setup_optimizers(value)
 
         # Build pipelines and optimizers
-        for b_desc in self._config.pipelines['blocks']:
+        blocks = self._config.pipelines.get('blocks', [])
+        for b_desc in blocks:
             block_type = getattr(pipe_block, f'{b_desc["phase"]}PipeBlock')
             b_kwargs = self.args_matching(block_type, b_desc['kwargs'])
             b_kwargs = {
