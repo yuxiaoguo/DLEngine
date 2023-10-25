@@ -489,6 +489,11 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             value.transforms = [eval(_t) for _t in value.transforms]
             value.fetch_transforms = [eval(_t) for _t in value.fetch_transforms]
 
+    def __len__(self):
+        if self._meta_file_descs is None or self._num_rank_samples is None:
+            self._lazy_init()
+        return self._num_rank_samples
+
     def __iter__(self):
         if self._meta_file_descs is None or self._num_rank_samples is None:
             self._lazy_init()
@@ -498,3 +503,40 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         for _ in range(self._num_rank_samples):
             yield self._get_item()
+
+
+@dataset_register.register
+class MultiLFSIterableDatasets(IterableDataset):
+    """
+    Multi large-file-system dataset.
+    """
+    def __init__(self, datasets: list[LFSSeqIterableDataset]) -> None:
+        super().__init__()
+        self._datasets = datasets
+
+        self._num_samples = list()
+        self._left_samples = list()
+
+    def __getitem__(self, index):
+        Logger().warning('Not implemented')
+        raise NotImplementedError
+
+    def _get_item(self, data_iters: list[Iterator]):
+        if np.sum(self._left_samples) == 0:
+            raise StopIteration
+        prob = self._left_samples / np.sum(self._left_samples)
+        choice = np.random.multinomial(1, prob).argmax()
+        assert self._left_samples[choice] > 0, \
+            f'No more samples for dataset {choice}'
+        self._left_samples[choice] -= 1
+        return next(data_iters[choice])
+
+    def __iter__(self):
+        self._num_samples = np.asarray([len(_d) for _d in self._datasets])
+        self._left_samples = self._num_samples.copy()
+        data_iters = [iter(_d) for _d in self._datasets]
+        while True:
+            try:
+                yield self._get_item(data_iters)
+            except StopIteration:
+                break
