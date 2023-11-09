@@ -52,7 +52,7 @@ class PipeBlock:
                 else:
                     out_dict[d_key] = d_value
             for d_key, d_value in out_dict.items():
-                if d_key == 'losses' or d_key == 'metrics':
+                if d_key == 'losses' or d_key == 'metrics' or d_key == 'statistics':
                     io_dict.setdefault(d_key, {})
                     io_dict[d_key] = dict(io_dict[d_key], **d_value)  # type: ignore
                     continue
