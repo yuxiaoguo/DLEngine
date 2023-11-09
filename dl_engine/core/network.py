@@ -28,6 +28,7 @@ class BaseIO:
     def __init__(self):
         self.losses: dict[str, torch.Tensor] = dict()
         self.metrics: dict[str, torch.Tensor] = dict()
+        self.statistics: dict[str, torch.Tensor] = dict()
 
     def launch_from_str_dict(self, tensors: dict[str, torch.Tensor]):
         """
@@ -50,6 +51,7 @@ class BaseIO:
             str_dict[dst_key] = getattr(self, dst_key)
         str_dict['losses'] = self.losses
         str_dict['metrics'] = self.metrics
+        str_dict['statistics'] = self.statistics
         return str_dict
 
 

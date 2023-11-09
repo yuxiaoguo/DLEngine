@@ -103,7 +103,7 @@ class PickleOutStream(BaseOutStream):
 
 
 @functional_register.register
-class ZipRecorder(BaseCallback):
+class ArrayRecorder(BaseCallback):
     """
     ZipRecorder is a recorder that records the data into zip file.
     """
@@ -134,6 +134,28 @@ class ZipRecorder(BaseCallback):
         self._meta_stream = self._out_stream_type(output_path)
         self._iter = 0
 
+    def _parse_item(self,
+                    data: torch.Tensor,
+                    data_mask: torch.Tensor,
+                    data_name: torch.Tensor,
+                    batch_idx: int):            
+        b_np: np.ndarray = data[batch_idx].detach().cpu().numpy()
+        if data_mask is not None:
+            b_mask = data_mask[batch_idx].detach().cpu().numpy()
+            b_np = b_np[b_mask > 0]
+        if data_name is not None:
+            native_name = data_name[batch_idx]
+            if isinstance(native_name, torch.Tensor):
+                name_uint8 = native_name.detach().cpu().numpy()
+                b_name = ''.join([chr(_c) for _c in name_uint8])
+            elif isinstance(native_name, str):
+                b_name = native_name
+            else:
+                raise NotImplementedError
+        else:
+            b_name = f'{self._iter:07d}'
+        return b_np, b_name
+
     def _run(self, io_proto: DataIO, **extra_kwargs):
         """
         Record the data into zip file.
@@ -141,44 +163,13 @@ class ZipRecorder(BaseCallback):
         assert self._meta_stream is not None, "ZipRecorder is not recording."
         assert io_proto.data is not None, "ZipRecorder only supports tensor data."
         data = io_proto.data
+        assert isinstance(data, (torch.Tensor)), "Recorder only supports tensor data."
         if self.last_shape is not None:
             data = data.reshape([data.shape[0], -1, *self.last_shape])
-        if isinstance(data, torch.Tensor):
-            for b_idx in range(data.shape[0]):
-                b_np: np.ndarray = data[b_idx].detach().cpu().numpy()
-                if io_proto.data_mask is not None:
-                    b_mask = io_proto.data_mask[b_idx].detach().cpu().numpy()
-                    b_np = b_np[b_mask > 0]
-                if io_proto.data_name is not None:
-                    native_name = io_proto.data_name[b_idx]
-                    if isinstance(native_name, torch.Tensor):
-                        name_uint8 = native_name.detach().cpu().numpy()
-                        b_name = ''.join([chr(_c) for _c in name_uint8])
-                    elif isinstance(native_name, str):
-                        b_name = native_name
-                    else:
-                        raise NotImplementedError
-                else:
-                    b_name = f'{self._iter:07d}'
-                self._meta_stream.write(b_np, b_name)
-                self._iter += 1
-        elif isinstance(data, list):
-            for g_data in zip(*data):
-                assert isinstance(g_data, (list, tuple))
-                for h_idx in range(g_data[0].shape[0]):
-                    for l_idx, l_data in enumerate(g_data):
-                        b_np = l_data[h_idx].detach().cpu().numpy()
-                        out_path = f'{self._iter:07d}_L{l_idx}_H{h_idx}'
-                        self._meta_stream.write(b_np, out_path)
-                self._iter += 1
-        elif isinstance(data, dict):
-            g_data: dict[str, torch.Tensor] = dict(data)
-            c_data = {_k: _v.detach().cpu().numpy() \
-                for _k, _v in g_data.items() if isinstance(_v, torch.Tensor)}
-            self._meta_stream.write(c_data, f'{self._iter:07d}')
+        for b_idx in range(data.shape[0]):
+            b_np, b_name = self._parse_item(data, io_proto.data_mask, io_proto.data_name, b_idx)
+            self._meta_stream.write(b_np, b_name)
             self._iter += 1
-        else:
-            raise NotImplementedError
 
     def close(self):
         """
@@ -190,7 +181,7 @@ class ZipRecorder(BaseCallback):
 
 
 @functional_register.register
-class PickleRecorder(ZipRecorder):
+class PickleRecorder(ArrayRecorder):
     """
     PickleRecorder is a recorder that records the data into pickle file.
     """
@@ -198,3 +189,25 @@ class PickleRecorder(ZipRecorder):
         in_descs=None, out_descs=None, io_type=DataIO) -> None:
         super().__init__(rel_out_dir, record_alias, last_shape, in_descs, out_descs, \
             io_type, PickleOutStream)
+
+
+@functional_register.register
+class DictPickleRecorder(PickleRecorder):
+    """
+    Using dictionary to record the data
+    """
+    def _run(self, io_proto: DataIO, **extra_kwargs):
+        dict_data = io_proto.data
+        assert isinstance(dict_data, dict)
+        out_items = dict()
+        for d_key, d_value in dict_data.items():
+            assert isinstance(d_value, torch.Tensor)
+            for b_idx in range(d_value.shape[0]):
+                b_np, b_name = self._parse_item(\
+                    d_value, io_proto.data_mask, io_proto.data_name, b_idx)
+                item = out_items.setdefault(b_name, dict())
+                item[d_key] = b_np
+        for b_name, b_dict in out_items.items():
+            self._meta_stream.write(b_dict, b_name)
+            self._iter += 1
+        return
