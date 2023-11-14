@@ -64,5 +64,6 @@ if __name__ == '__main__':
 
     log_level = getattr(logging, args.log_level.upper())
     logging.basicConfig(level=log_level, handlers=[logging.StreamHandler()])
-    pipe_core = Pipeline(args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir)
+    pipe_core = Pipeline(\
+        args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir, num_nodes=args.num_nodes)
     pipe_core.run()
