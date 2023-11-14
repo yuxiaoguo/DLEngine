@@ -34,10 +34,11 @@ class Pipeline:
     """
     Pipeline class for running training/inference pipeline.
     """
-    def __init__(self, config_path, log_dir, ckpt_dir, prof_dir):
+    def __init__(self, config_path, log_dir, ckpt_dir, prof_dir, devices='auto', num_nodes=1):
         SingletonWriter().initialize(log_dir=log_dir)
         self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
-        self._fabric = L.Fabric(precision=self._config.precision)  # type: ignore
+        self._fabric = L.Fabric(\
+            precision=self._config.precision, devices=devices, num_nodes=num_nodes)  # type: ignore
         self._fabric.launch()
 
         self._log_dir = log_dir
