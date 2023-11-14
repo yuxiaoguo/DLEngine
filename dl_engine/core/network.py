@@ -146,7 +146,7 @@ class BaseNetwork(Module):
             Logger().info(f'{self.__class__} No weights loaded')
 
         if dist.is_available() and dist.is_initialized():
-            self._rank = dist.get_rank()
+            self._rank = dist.get_rank() % torch.cuda.device_count()
         self.to(torch.device(f'cuda:{self._rank}'))
 
         if self._trainable in [TrainState.FIX_ALL, TrainState.FIX_VARIABLE]:
