@@ -128,7 +128,8 @@ class TrainPipeBlock(PipeBlock):
             losses = list(data_out['losses'].values())
             with self._fabric.autocast():
                 loss_sum = torch.sum(torch.stack(losses))
-            self._fabric.backward(loss_sum)
+            self._fabric.backward(loss_sum / torch.as_tensor(\
+                self._acc_stride, dtype=loss_sum.dtype, device=loss_sum.device))
 
         if self._acc_iter == 0:
             self._optimizer.step()
