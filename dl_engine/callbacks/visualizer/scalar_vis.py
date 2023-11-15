@@ -53,7 +53,7 @@ class ScalarVisualizer(BaseVisualizer):
                 if self._is_global_sync():
                     dist.all_reduce(value, op=dist.ReduceOp.SUM)
                     value /= dist.get_world_size()
-            if self._rank == 0:
+            if self._global_rank == 0:
                 self._scalars.setdefault(key, []).append(value.item())
                 if not self._epoch_stat and self._iter % self._stride == 0:
                     self._writer.writer.add_scalar(f'{self._tag}/{key}', value, self._writer.iter)
@@ -61,7 +61,7 @@ class ScalarVisualizer(BaseVisualizer):
 
     def close(self) -> None:
         super().close()
-        if self._rank > 0:
+        if self._global_rank > 0:
             return
         for key, value in self._scalars.items():
             mean_scalar = np.mean(value)

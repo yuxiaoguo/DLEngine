@@ -89,7 +89,8 @@ class BaseNetwork(Module):
         self._trainable: TrainState = trainable
 
         self._initialized = False
-        self._rank = 0
+        self._local_rank = 0
+        self._global_rank = 0
 
         self._in_descs = in_descs if in_descs is not None else dict()
         self._out_descs = out_descs if out_descs is not None else dict()
@@ -146,8 +147,9 @@ class BaseNetwork(Module):
             Logger().info(f'{self.__class__} No weights loaded')
 
         if dist.is_available() and dist.is_initialized():
-            self._rank = dist.get_rank() % torch.cuda.device_count()
-        self.to(torch.device(f'cuda:{self._rank}'))
+            self._local_rank = dist.get_rank() % torch.cuda.device_count()
+            self._global_rank = dist.get_rank()
+        self.to(torch.device(f'cuda:{self._local_rank}'))
 
         if self._trainable in [TrainState.FIX_ALL, TrainState.FIX_VARIABLE]:
             self.requires_grad_(False).eval()
