@@ -59,9 +59,11 @@ if __name__ == '__main__':
     parser.add_argument('--ckpt_dir', type=str, help='Path to the checkpoint directory.')
     parser.add_argument('--prof_dir', type=str, help='Path to the profiler directory.')
     parser.add_argument('--log_level', type=str, default='INFO', help='Log level.')
+    parser.add_argument('--num_nodes', type=int, default=1, help='Number of nodes.')
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper())
     logging.basicConfig(level=log_level, handlers=[logging.StreamHandler()])
-    pipe_core = Pipeline(args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir)
+    pipe_core = Pipeline(\
+        args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir, num_nodes=args.num_nodes)
     pipe_core.run()
