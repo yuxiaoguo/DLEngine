@@ -1,6 +1,7 @@
 """
 Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
+# pylint: disable=no-member
 import os
 import zipfile
 import pickle
@@ -108,8 +109,8 @@ class ArrayRecorder(BaseCallback):
     ZipRecorder is a recorder that records the data into zip file.
     """
     def __init__(self, rel_out_dir: str, record_alias: str, last_shape: Optional[list] = None, \
-        in_descs=None, out_descs=None, io_type=DataIO, out_stream_type: Type[BaseOutStream] = \
-        ZipOutStream) -> None:
+        mask_dim=1, in_descs=None, out_descs=None, io_type=DataIO, \
+        out_stream_type: Type[BaseOutStream] = ZipOutStream) -> None:
         super().__init__(in_descs=in_descs, out_descs=out_descs, io_type=io_type)
         self._meta_stream: BaseOutStream | None = None
         self._out_stream_type = out_stream_type
@@ -122,6 +123,7 @@ class ArrayRecorder(BaseCallback):
         self._config = PipelineConfig()
 
         self._iter = 0
+        self._mask_dim = mask_dim - 1
 
     def reset(self):
         """
@@ -138,11 +140,17 @@ class ArrayRecorder(BaseCallback):
                     data: torch.Tensor,
                     data_mask: torch.Tensor,
                     data_name: torch.Tensor,
-                    batch_idx: int):            
+                    batch_idx: int):
         b_np: np.ndarray = data[batch_idx].detach().cpu().numpy()
         if data_mask is not None:
-            b_mask = data_mask[batch_idx].detach().cpu().numpy()
-            b_np = b_np[b_mask > 0]
+            b_mask: np.ndarray = data_mask[batch_idx].detach().cpu().numpy()
+            # Select with mask along a given axis
+            # b_np = torch.gather(b_np, self._mask_dim, b_mask)
+            assert self._mask_dim in [0, 1], "Only support 2D mask."
+            if self._mask_dim == 0:
+                b_np = b_np[b_mask > 0]
+            else:
+                b_np = b_np[:, b_mask > 0]
         if data_name is not None:
             native_name = data_name[batch_idx]
             if isinstance(native_name, torch.Tensor):
@@ -165,7 +173,11 @@ class ArrayRecorder(BaseCallback):
         data = io_proto.data
         assert isinstance(data, (torch.Tensor)), "Recorder only supports tensor data."
         if self.last_shape is not None:
-            data = data.reshape([data.shape[0], -1, *self.last_shape])
+            if data.shape[-1] == self.last_shape[0]:
+                rest_dims = self.last_shape
+            else:
+                rest_dims = [-1, *self.last_shape]
+            data = data.reshape([*data.shape[:-1], *rest_dims])
         for b_idx in range(data.shape[0]):
             b_np, b_name = self._parse_item(data, io_proto.data_mask, io_proto.data_name, b_idx)
             self._meta_stream.write(b_np, b_name)
@@ -186,9 +198,10 @@ class PickleRecorder(ArrayRecorder):
     PickleRecorder is a recorder that records the data into pickle file.
     """
     def __init__(self, rel_out_dir: str, record_alias: str, last_shape: list | None = None,
-        in_descs=None, out_descs=None, io_type=DataIO) -> None:
-        super().__init__(rel_out_dir, record_alias, last_shape, in_descs, out_descs, \
-            io_type, PickleOutStream)
+        mask_dim=1, in_descs=None, out_descs=None, io_type=DataIO) -> None:
+        super().__init__(rel_out_dir, record_alias, last_shape, mask_dim=mask_dim, \
+            in_descs=in_descs, out_descs=out_descs, io_type=io_type, \
+            out_stream_type=PickleOutStream)
 
 
 @functional_register.register

@@ -74,8 +74,8 @@ class BaseNetwork(Module):
         io_type=BaseIO, name=None, trainable=None) -> None:
         super().__init__()
         if self.__class__.IO_INTERFACE != BaseIO:
-            assert io_type == BaseIO or self.__class__.IO_INTERFACE == io_type,\
-                'IO type must be BaseIO when IO_INTERFACE is not BaseIO'
+            # assert io_type == BaseIO or self.__class__.IO_INTERFACE == io_type,\
+            #     'IO type must be BaseIO when IO_INTERFACE is not BaseIO'
             io_type = self.__class__.IO_INTERFACE
         self._io_type = io_type
         self._weights_path = weights_path
