@@ -5,6 +5,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 import os
 import logging
 import argparse
+import tempfile
 
 from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
@@ -54,13 +55,27 @@ if __name__ == '__main__':
     scanning_user_registered_modules()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_path', type=str, help='Path to the train.yaml.')
-    parser.add_argument('--log_dir', type=str, help='Path to the log directory.')
-    parser.add_argument('--ckpt_dir', type=str, help='Path to the checkpoint directory.')
-    parser.add_argument('--prof_dir', type=str, help='Path to the profiler directory.')
-    parser.add_argument('--log_level', type=str, default='INFO', help='Log level.')
-    parser.add_argument('--num_nodes', type=int, default=1, help='Number of nodes.')
+    parser.add_argument(\
+        '--config_path', type=str, help='Path to the train.yaml.')
+    parser.add_argument(\
+        '--log_dir', type=str, default='', help='Path to the log directory.')
+    parser.add_argument(\
+        '--ckpt_dir', type=str, default='', help='Path to the checkpoint directory.')
+    parser.add_argument(\
+        '--prof_dir', type=str, default='', help='Path to the profiler directory.')
+    parser.add_argument(\
+        '--log_level', type=str, default='INFO', help='Log level.')
+    parser.add_argument(\
+        '--num_nodes', type=int, default=1, help='Number of nodes.')
     args = parser.parse_args()
+
+    tmp_dir = tempfile.gettempdir()
+    if args.log_dir == '':
+        args.log_dir = os.path.join(tmp_dir, 'dl_engine_log')
+    if args.ckpt_dir == '':
+        args.ckpt_dir = os.path.join(tmp_dir, 'dl_engine_ckpt')
+    if args.prof_dir == '':
+        args.prof_dir = os.path.join(tmp_dir, 'dl_engine_prof')
 
     log_level = getattr(logging, args.log_level.upper())
     logging.basicConfig(level=log_level, handlers=[logging.StreamHandler()])
