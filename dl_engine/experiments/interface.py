@@ -17,6 +17,7 @@ class GlobalEnvs(metaclass=Singleton):
             'Please set the environment variable DATA_ROOT to the data directory.'
         self._exp_root: str = os.environ.get('EXP_ROOT', '')
         self._data_root: str = os.environ.get('DATA_ROOT', '')
+        self._data_raw: str = os.environ.get('DATA_RAW', '')
 
     @property
     def exp_root(self) -> str:

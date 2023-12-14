@@ -69,7 +69,7 @@ if __name__ == '__main__':
         '--num_nodes', type=int, default=1, help='Number of nodes.')
     args = parser.parse_args()
 
-    tmp_dir = tempfile.gettempdir()
+    tmp_dir = tempfile.mkdtemp(prefix='dl_engine_')
     if args.log_dir == '':
         args.log_dir = os.path.join(tmp_dir, 'dl_engine_log')
     if args.ckpt_dir == '':

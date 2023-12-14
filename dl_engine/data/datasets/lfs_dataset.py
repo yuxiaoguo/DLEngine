@@ -123,6 +123,32 @@ class MetaInstance:
         """
         return self._meta_data is None
 
+    def _split_to_pieces(self,
+                         data_dict: dict[str, np.ndarray],
+                         sel_idx: int,
+                         seq_idx: int,
+                         audio_offset,
+                         non_seq_keys) -> dict[str, np.ndarray]:
+        """
+        Split the data to pieces.
+        """
+        if self._piece_len == 0:
+            return data_dict
+
+        seq_bias = sel_idx - self._meta_cfg.pieces_offset[seq_idx]
+        if self._shuffle:
+            rand_end = self._meta_cfg.random_range[seq_idx] - audio_offset
+            const_bias = np.random.randint(0, rand_end)
+        else:
+            const_bias = self._seq_offset
+        seq_start = seq_bias * self._piece_len + const_bias
+        seq_end = seq_start + self._piece_len
+        next_data = {_k: (_v[seq_start:seq_end] if _k not in non_seq_keys else _v) \
+            for _k, _v in data_dict.items()}
+        next_data['seq_name'] = data_dict['name']
+        next_data['name'] = data_dict['name'] + f'_s{self._seq_offset}_p{seq_bias}'
+        return next_data
+
     def next(self) -> dict[str, np.ndarray]:
         """
         Get the next meta instance.
@@ -152,34 +178,12 @@ class MetaInstance:
 
 
 @dataset_register.register
-class LFSIterableDataset(IterableDataset):
-    """
-    Large-file-system dataset.
-    """
-    def __init__(self, data_root, desc_cfg, used_keys: dict[str, str | dict], desc_type) -> None:
-        super().__init__()
-        self._desc_cfg_path = os.path.join(data_root, desc_cfg)
-        with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
-            self._desc_cfg = desc_type(**json.load(desc_cfg_stream))
-        self._data_root = data_root
-        self._used_keys = {
-            _k: KeyDataDesc(**_v) if isinstance(_v, dict) else KeyDataDesc(_v) \
-                for _k, _v in used_keys.items()
-        }
-
-    def __getitem__(self, index):
-        Logger().warning('Not implemented')
-        raise NotImplementedError
-
-    def __iter__(self) -> Iterator:
-        return super().__iter__()
-
-
-@dataset_register.register
-class LFSSeqIterableDataset(LFSIterableDataset):
+class LFSSeqIterableDataset(IterableDataset):
     """
     Large-file-system dataset compatible with sequential protocols.
     """
+    META_INSTANCE_TYPE = MetaInstance
+
     def __init__(self,
                  data_root,
                  desc_cfg,
@@ -193,7 +197,17 @@ class LFSSeqIterableDataset(LFSIterableDataset):
                  shuffle: bool = False,
                  log_level: str = 'INFO',
                  rank_method: str = 'Origin') -> None:
-        super().__init__(data_root, desc_cfg, used_keys, SequentialDataDescV0)
+        super().__init__()
+
+        self._desc_cfg_path = os.path.join(data_root, desc_cfg)
+        with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
+            self._desc_cfg = SequentialDataDescV0(**json.load(desc_cfg_stream))
+        self._data_root = data_root
+        self._used_keys = {
+            _k: KeyDataDesc(**_v) if isinstance(_v, dict) else KeyDataDesc(_v) \
+                for _k, _v in used_keys.items()
+        }
+
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_len = seq_len
         self._seq_split = seq_split
@@ -210,7 +224,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._logged = False
 
         # Support legacy settings, will be deprecated in the future
-        if self._shuffle:
+        if self._shuffle is not None and self._shuffle:
             self._rank_method = RankMethod.RANDOM
         if not seq_mode:
             assert seq_split <= 1, 'seq_split should be less than 1 in legacy seq mode'
@@ -259,6 +273,35 @@ class LFSSeqIterableDataset(LFSIterableDataset):
             for d_key, d_value in data_dict.items():
                 self._preloaded_data.setdefault(d_key, dict())[used_key] = d_value[used_key]
 
+    def _calculate_meta_num_pieces(self, meta_file_cfg: MetaSeqFileDescV0) \
+        -> tuple[LFSMetaDesc, int]:
+        """
+        Calculate the number of pieces for each sequence of given meta file.
+
+        Returns:
+            meta_desc: meta description, containing the number of pieces and
+                random offset for each sequence.
+            total_pieces: total number of pieces of given meta file.
+        """
+        if self._seq_split == 0:
+            # sequence split equals to 0 means no sequence split
+            num_pieces_all_seqs = np.ones_like(meta_file_cfg.local_nonseq_offset)
+            rand_range_all_seqs = np.zeros_like(meta_file_cfg.local_nonseq_offset)
+        else:
+            num_frames_all_seqs = np.diff(np.concatenate(\
+                [meta_file_cfg.local_nonseq_offset, [meta_file_cfg.num_nonseq_samples]]))
+            num_pieces_all_seqs = np.maximum(\
+                0, (num_frames_all_seqs + int(self._overlap_ratio * self._seq_split))\
+                // self._seq_split - 1)
+            rand_range_all_seqs = np.maximum(0, num_frames_all_seqs - \
+                num_pieces_all_seqs * self._seq_split)
+        offset_pieces_all_seqs = np.concatenate([[0], np.cumsum(num_pieces_all_seqs)])
+
+        lfs_mata_desc = LFSMetaDesc(\
+            pieces_offset=offset_pieces_all_seqs, random_range=rand_range_all_seqs)
+        lfs_num_pieces = offset_pieces_all_seqs[-1]
+        return lfs_mata_desc, lfs_num_pieces
+
     def _distributed_samples_assignment(self, meta_files_cfg: list[MetaSeqFileDescV0]) -> \
         tuple[list[LFSMetaDesc], int]:
         """
@@ -284,24 +327,9 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         num_pieces_all_metas: list[int] = list()
         desc_all_metas: list[LFSMetaDesc] = list()
         for meta_file_cfg in meta_files_cfg:
-            if self._seq_split == 0:
-                # sequence split equals to 0 means no sequence split
-                num_pieces_all_seqs = np.ones_like(meta_file_cfg.local_nonseq_offset)
-                rand_range_all_seqs = np.zeros_like(meta_file_cfg.local_nonseq_offset)
-            else:
-                num_frames_all_seqs = np.diff(np.concatenate(\
-                    [meta_file_cfg.local_nonseq_offset, [meta_file_cfg.num_nonseq_samples]]))
-                num_pieces_all_seqs = np.maximum(\
-                    0, (num_frames_all_seqs + int(self._overlap_ratio * self._seq_split))\
-                    // self._seq_split - 1)
-                rand_range_all_seqs = np.maximum(0, num_frames_all_seqs - \
-                    num_pieces_all_seqs * self._seq_split)
-            offset_pieces_all_seqs = np.concatenate([[0], np.cumsum(num_pieces_all_seqs)])
-
-            lfs_mata_desc = LFSMetaDesc(\
-                pieces_offset=offset_pieces_all_seqs, random_range=rand_range_all_seqs)
-            num_pieces_all_metas.append(offset_pieces_all_seqs[-1])
+            lfs_mata_desc, num_pieces_meta = self._calculate_meta_num_pieces(meta_file_cfg)
             desc_all_metas.append(lfs_mata_desc)
+            num_pieces_all_metas.append(num_pieces_meta)
 
         # Step 2: calculate the number of samples for each rank
         num_devices = DistDataUtils.get_rank_all()
@@ -412,7 +440,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
     def _async_fecth(self, future: Future):
         meta_cfg = self._meta_file_descs[self._next_meta_idx]
-        fetch_meta = MetaInstance(\
+        fetch_meta = self.META_INSTANCE_TYPE(\
             future.result(), meta_cfg, self._shuffle, self._seq_split, self._seq_offset)
         with self._queue_lock:
             self._prefetch_metas.append(fetch_meta)
@@ -476,7 +504,7 @@ class LFSSeqIterableDataset(LFSIterableDataset):
         self._prefetch_metas = list()
         self._next_meta_idx = 0
 
-        self._cur_meta = MetaInstance(None, LFSMetaDesc(), self._shuffle, 0, 0)
+        self._cur_meta = self.META_INSTANCE_TYPE(None, LFSMetaDesc(), self._shuffle, 0, 0)
 
         self._max_cached_metas = 3
         self._prefetch_event = Event()
@@ -503,6 +531,10 @@ class LFSSeqIterableDataset(LFSIterableDataset):
 
         for _ in range(self._num_rank_samples):
             yield self._get_item()
+
+    def __getitem__(self, index):
+        Logger().warning('Not implemented')
+        raise NotImplementedError
 
 
 @dataset_register.register
