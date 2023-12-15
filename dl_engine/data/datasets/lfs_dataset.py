@@ -105,11 +105,13 @@ class MetaInstance:
                  meta_cfg: LFSMetaDesc,
                  shuffle: bool,
                  piece_len: int,
+                 offset_ratio: int,
                  seq_offset: int) -> None:
         self._meta_data = meta_data
         self._meta_cfg = meta_cfg
         self._shuffle = shuffle
         self._piece_len = piece_len
+        self._offset_ratio = offset_ratio
         self._seq_offset = seq_offset
 
         self._cur_idx = 0
@@ -122,6 +124,13 @@ class MetaInstance:
         Check if the meta instance is empty.
         """
         return self._meta_data is None
+
+    @staticmethod
+    def num_pieces(seqs_num_frames: np.ndarray, piece_len, offset_ratio) -> LFSMetaDesc:
+        """
+        Calculate the number of pieces for each sequence.
+        """
+        return np.maximum(0, (seqs_num_frames + int(offset_ratio * piece_len)) // piece_len - 1)
 
     def _split_to_pieces(self,
                          data_dict: dict[str, np.ndarray],
@@ -233,6 +242,9 @@ class LFSSeqIterableDataset(IterableDataset):
         if self._seq_offset > 0:
             assert not self._shuffle, 'seq_offset should be less than 0 in shuffle mode'
 
+        if self._rank_method == RankMethod.RANDOM:
+            self._shuffle = True
+
         self._meta_file_descs, self._num_rank_samples = None, None
 
         self._prefetch_pool = None
@@ -290,9 +302,8 @@ class LFSSeqIterableDataset(IterableDataset):
         else:
             num_frames_all_seqs = np.diff(np.concatenate(\
                 [meta_file_cfg.local_nonseq_offset, [meta_file_cfg.num_nonseq_samples]]))
-            num_pieces_all_seqs = np.maximum(\
-                0, (num_frames_all_seqs + int(self._overlap_ratio * self._seq_split))\
-                // self._seq_split - 1)
+            num_pieces_all_seqs = self.META_INSTANCE_TYPE.num_pieces(\
+                num_frames_all_seqs, self._seq_split, self._overlap_ratio)
             rand_range_all_seqs = np.maximum(0, num_frames_all_seqs - \
                 num_pieces_all_seqs * self._seq_split)
         offset_pieces_all_seqs = np.concatenate([[0], np.cumsum(num_pieces_all_seqs)])
@@ -441,7 +452,12 @@ class LFSSeqIterableDataset(IterableDataset):
     def _async_fecth(self, future: Future):
         meta_cfg = self._meta_file_descs[self._next_meta_idx]
         fetch_meta = self.META_INSTANCE_TYPE(\
-            future.result(), meta_cfg, self._shuffle, self._seq_split, self._seq_offset)
+            future.result(),
+            meta_cfg,
+            self._shuffle,
+            self._seq_split,
+            self._overlap_ratio,
+            self._seq_offset)
         with self._queue_lock:
             self._prefetch_metas.append(fetch_meta)
             self._next_meta_idx += 1
@@ -504,7 +520,8 @@ class LFSSeqIterableDataset(IterableDataset):
         self._prefetch_metas = list()
         self._next_meta_idx = 0
 
-        self._cur_meta = self.META_INSTANCE_TYPE(None, LFSMetaDesc(), self._shuffle, 0, 0)
+        self._cur_meta = self.META_INSTANCE_TYPE(\
+            None, LFSMetaDesc(), self._shuffle, 0, 0, 0)
 
         self._max_cached_metas = 3
         self._prefetch_event = Event()
