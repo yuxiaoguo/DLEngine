@@ -33,6 +33,13 @@ class GlobalEnvs(metaclass=Singleton):
         """
         return self._data_root
 
+    @property
+    def data_raw(self) -> str:
+        """
+        Returns the raw data directory.
+        """
+        return self._data_raw
+
 
 class TaskManager:
     """
