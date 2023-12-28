@@ -153,7 +153,7 @@ class TestPipeBlock(PipeBlock):
     """
     A test block in pipeline
     """
-    def __init__(self, dataloader: DataLoader, execution_flow: List[BaseNetwork],
+    def __init__(self, execution_flow: List[BaseNetwork], dataloader: DataLoader = None,
         iter_callbacks: Optional[list] = None, saving_dir: Optional[str] = None,
         fabric: Optional[Fabric]=None):
         super().__init__(dataloader, execution_flow, None, iter_callbacks, saving_dir, fabric)
