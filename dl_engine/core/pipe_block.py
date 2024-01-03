@@ -108,18 +108,10 @@ class TrainPipeBlock(PipeBlock):
         self._acc_stride = acc_stride
         self._acc_iter = 0
 
-    def run_iter(self, data_in: dict[str, torch.Tensor]):
+    def _run_iter_grad_acc(self, data_in):
         assert self._optimizer is not None
         self._acc_iter += 1
         self._acc_iter %= self._acc_stride
-
-        if self._fabric is None:
-            data_out = self.run_target(self._execution_flow, data_in)
-            losses = list(data_out['losses'].values())
-            loss_sum = torch.sum(torch.stack(losses))
-            loss_sum.backward()
-            self._optimizer.step()
-            return data_out
 
         fabric_modules = [_m for _m in self._execution_flow if isinstance(_m, _FabricModule)]
         assert len(fabric_modules) == 1, 'Only one fabric module is allowed.'
@@ -134,6 +126,37 @@ class TrainPipeBlock(PipeBlock):
         if self._acc_iter == 0:
             self._optimizer.step()
             self._optimizer.zero_grad()
+        return data_out
+
+    def _run_iter_fabric(self, data_in):
+        data_out = self.run_target(self._execution_flow, data_in)
+        losses = list(data_out['losses'].values())
+        with self._fabric.autocast():
+            loss_sum = torch.sum(torch.stack(losses))
+        self._fabric.backward(loss_sum)
+
+        self._optimizer.step()
+        self._optimizer.zero_grad()
+        return data_out
+
+    def _run_iter_no_fabric(self, data_in):
+        assert self._optimizer is not None
+        data_out = self.run_target(self._execution_flow, data_in)
+        losses = list(data_out['losses'].values())
+        loss_sum = torch.sum(torch.stack(losses))
+        loss_sum.backward()
+        self._optimizer.step()
+        return data_out
+
+    def run_iter(self, data_in: dict[str, torch.Tensor]):
+
+        if self._fabric is None:
+            data_out = self._run_iter_no_fabric(data_in)
+        else:
+            if self._acc_stride > 1:
+                data_out = self._run_iter_grad_acc(data_in)
+            else:
+                data_out = self._run_iter_fabric(data_in)
 
         return data_out
 
