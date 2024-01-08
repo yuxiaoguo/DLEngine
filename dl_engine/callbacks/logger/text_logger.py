@@ -3,7 +3,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 from typing import Dict, List
 
-import torch
+import numpy as np
 
 from dl_engine.core.logger import Logger
 from dl_engine.core.register import functional_register
@@ -31,15 +31,22 @@ class ProgressTextLogger(BaseCallback):
             if m_tenor.numel() == 1:
                 self._metric_recorder.setdefault(m_name, list()).append(m_tenor.item())
             else:
-                self._metric_recorder.setdefault(m_name, list()).append(torch.mean(m_tenor).item())
+                self._metric_recorder.setdefault(\
+                    m_name, list()).append(m_tenor.detach().cpu().numpy())
 
     def _gen_out_str(self):
         out_loss_str = ' - '.join(
             [f'{k}: {sum(v) / len(v):.7f}' for k, v in self._loss_recorder.items()])
         out_loss_str = f'Losses: {out_loss_str}'
         out_metric_str = ' - '.join(
-            [f'{k}: {sum(v) / len(v):.7f}' for k, v in self._metric_recorder.items()])
+            [f'{k}: {sum(v) / len(v):.7f}' \
+             for k, v in self._metric_recorder.items() if not isinstance(v[-1], np.ndarray)])
         out_metric_str = f'Metrics: {out_metric_str}'
+        for _k, _v in self._metric_recorder.items():
+            if not isinstance(_v[-1], np.ndarray):
+                continue
+            out_list = [f'{_e:.3f}' for _e in _v[-1].tolist()]
+            out_metric_str = f'{out_metric_str}\n{_k}: {out_list}'
         return out_loss_str, out_metric_str
 
     def reset(self) -> None:
