@@ -93,18 +93,22 @@ class Experiment:
 
         # Subfolders
         folders = [self._exp_path]
+
         self._profiles_path = os.path.join(self._exp_path, 'profiles')
         self._logs_path = os.path.join(self._exp_path, 'logs')
         self._ckpts_path = os.path.join(self._exp_path, 'ckpts')
         self._config_path = os.path.join(self._exp_path, 'configs')
         self._reports_path = os.path.join(self._exp_path, 'reports')
         self._analysis_path = os.path.join(self._exp_path, 'analysis')
+        self._benchmark_path = os.path.join(self._exp_path, 'benchmark')
+
         folders.append(self._profiles_path)
         folders.append(self._logs_path)
         folders.append(self._ckpts_path)
         folders.append(self._config_path)
         folders.append(self._reports_path)
         folders.append(self._analysis_path)
+        folders.append(self._benchmark_path)
 
         # Check if the experiment exists
         if not create:
@@ -169,6 +173,13 @@ class Experiment:
         Returns the task of the experiment.
         """
         return self._task
+    
+    @property
+    def benchmark_path(self) -> str:
+        """
+        Returns the benchmark directory.
+        """
+        return self._benchmark_path
 
     def _fetch_by_exp_id(self, exp_id) -> tuple[str, str, str]:
         """

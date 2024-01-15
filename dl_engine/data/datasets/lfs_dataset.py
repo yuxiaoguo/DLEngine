@@ -209,8 +209,13 @@ class LFSSeqIterableDataset(IterableDataset):
         super().__init__()
 
         self._desc_cfg_path = os.path.join(data_root, desc_cfg)
-        with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
-            self._desc_cfg = SequentialDataDescV0(**json.load(desc_cfg_stream))
+        if not os.path.exists(self._desc_cfg_path):
+            Logger().warning(f'Description file {self._desc_cfg_path} does not exist')
+            self._desc_cfg =  SequentialDataDescV0()
+        else:
+            with open(self._desc_cfg_path, 'r', encoding='utf-8') as desc_cfg_stream:
+                self._desc_cfg = SequentialDataDescV0(**json.load(desc_cfg_stream))
+
         self._data_root = data_root
         self._used_keys = {
             _k: KeyDataDesc(**_v) if isinstance(_v, dict) else KeyDataDesc(_v) \
@@ -356,7 +361,7 @@ class LFSSeqIterableDataset(IterableDataset):
         rank_split = rank_device * num_workers + rank_worker
 
         num_pieces_all_metas = np.asarray(num_pieces_all_metas)
-        num_all_samples = np.sum(num_pieces_all_metas)
+        num_all_samples = int(np.sum(num_pieces_all_metas))
         num_rank_samples = num_all_samples // total_splits
 
         # Step 3: assign meta files to each rank
