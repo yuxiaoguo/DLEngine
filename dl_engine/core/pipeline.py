@@ -180,8 +180,15 @@ class Pipeline:
             if _k in self._networks:
                 Logger().info(f'Loading network: {_k}')
                 missing, unexcepted = self._networks[_k].load_state_dict(_v, False)
-                print(f'-- Missing keys: {missing}')
-                print(f'-- Unexpected keys: {unexcepted}')
+                Logger().info(f'-- Missing keys: {missing}')
+                Logger().info(f'-- Unexpected keys: {unexcepted}')
+            elif len([_n for _n in self._networks.keys() if _n.startswith(_k)]) > 0:
+                matching_pairs = \
+                    [(_n, _k) for _n, _ in self._networks.items() if _n.startswith(_k)]
+                assert len(matching_pairs) == 1, f'Multiple matching pairs: {matching_pairs}'
+                Logger().info(f'Loading network: {matching_pairs[0][0]} from {_k}')
+                missing, unexcepted = \
+                    self._networks[matching_pairs[0][0]].load_state_dict(_v, False)
             elif _k in self._optimizers:
                 Logger().info(f'Loading optimizer: {_k}')
                 self._optimizers[_k].load_state_dict(_v)
