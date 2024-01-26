@@ -2,6 +2,7 @@
 Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=no-member,import-error
+from contextlib import nullcontext
 from abc import abstractmethod
 from typing import List, Tuple, Optional
 
@@ -114,14 +115,18 @@ class TrainPipeBlock(PipeBlock):
         self._acc_iter %= self._acc_stride
 
         fabric_modules = [_m for _m in self._execution_flow if isinstance(_m, _FabricModule)]
-        assert len(fabric_modules) == 1, 'Only one fabric module is allowed.'
+        assert len(fabric_modules) <= 3, 'Only one fabric module is allowed.'
         with self._fabric.no_backward_sync(fabric_modules[0], enabled=self._acc_iter != 0):
-            data_out = self.run_target(self._execution_flow, data_in)
-            losses = list(data_out['losses'].values())
-            with self._fabric.autocast():
-                loss_sum = torch.sum(torch.stack(losses))
-            self._fabric.backward(loss_sum / torch.as_tensor(\
-                self._acc_stride, dtype=loss_sum.dtype, device=loss_sum.device))
+            with self._fabric.no_backward_sync(fabric_modules[1], \
+                enabled=self._acc_iter != 0) if len(fabric_modules) > 1 else nullcontext():
+                with self._fabric.no_backward_sync(fabric_modules[2], \
+                    enabled=self._acc_iter != 0) if len(fabric_modules) > 2 else nullcontext():
+                    data_out = self.run_target(self._execution_flow, data_in)
+                    losses = list(data_out['losses'].values())
+                    with self._fabric.autocast():
+                        loss_sum = torch.sum(torch.stack(losses))
+                    self._fabric.backward(loss_sum / torch.as_tensor(\
+                        self._acc_stride, dtype=loss_sum.dtype, device=loss_sum.device))
 
         if self._acc_iter == 0:
             self._optimizer.step()
