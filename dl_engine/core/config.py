@@ -9,7 +9,6 @@ from typing import Optional
 import yaml
 
 from ..utils import Singleton
-from .logger import Logger
 
 
 class EnvAnnoType(enum.Enum):
@@ -174,6 +173,7 @@ class PipelineConfig(BaseConfig):
         self.log_dir = str()
         self.ckpt_dir = str()
         self.prof_dir = str()
+        self.use_epoch = str()
 
         self.save_ckpt = 0
         self.precision = str()
@@ -199,21 +199,5 @@ class PipelineConfig(BaseConfig):
         with open(config_path, 'r', encoding='utf-8') as yaml_file:
             self._raw_config: dict = yaml.safe_load(yaml_file)
 
-        self.set_epoch()
-
         self.load_from_dict(self._raw_config)
         return self
-
-    def set_epoch(self, epoch: Optional[int | str] = None):
-        """
-        Set epoch
-        """
-        if epoch is None:
-            if os.path.isdir(self.ckpt_dir):
-                if os.path.exists(os.path.join(self.ckpt_dir, 'final.pt')):
-                    epoch = 'final'
-                else:
-                    epoch = 0
-            else:
-                epoch = os.path.basename(self.ckpt_dir).split('.')[0]
-        self.envs['EPOCH'] = epoch

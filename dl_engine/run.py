@@ -11,7 +11,7 @@ from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
 
 
-def scanning_user_registered_modules(cwd=None, registery_cands=None):
+def scanning_user_registered_modules(cwd=None, registery_cands=None, pkg_name=None):
     """
     Scanning user registered modules.
     """
@@ -49,7 +49,8 @@ def scanning_user_registered_modules(cwd=None, registery_cands=None):
                 py_files.append(py_path)
     py_modules_str = [py_file.replace(cwd, '').replace('/', '.').replace('\\', '.')[1:-3]\
         for py_file in py_files]
-    _ = [__import__(py_module_str) for py_module_str in py_modules_str]
+    _ = [__import__(f'{pkg_name}.{py_module_str}' if pkg_name else py_module_str) \
+        for py_module_str in py_modules_str]
 
 if __name__ == '__main__':
     scanning_user_registered_modules()
