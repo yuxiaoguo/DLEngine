@@ -130,9 +130,10 @@ class ArrayRecorder(BaseCallback):
         Start recording the data. Zip file will be created if not exists.
         """
         assert self._meta_stream is None, "ZipRecorder is already recording."
-        output_folder = os.path.join(self._config.prof_dir, self._rel_out_dir)
-        os.makedirs(output_folder, exist_ok=True)
+        output_folder = os.path.join(self._config.prof_dir, self._rel_out_dir) \
+            if self._rel_out_dir else self._config.prof_dir
         output_path = os.path.join(output_folder, self._record_alias)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         self._meta_stream = self._out_stream_type(output_path)
         self._iter = 0
 

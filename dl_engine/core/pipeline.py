@@ -158,8 +158,11 @@ class Pipeline:
         """
         Load checkpoint.
         """
-        Logger().info(f'Loading checkpoint from {self._ckpt_dir}')
-        ckpt_dir: str = self._ckpt_dir
+        if self._config.use_epoch != '':
+            ckpt_dir = os.path.join(self._ckpt_dir, f'epoch_{self._config.use_epoch}.pt')
+        else:
+            ckpt_dir = self._ckpt_dir
+        Logger().info(f'Loading checkpoint from {ckpt_dir}')
         if os.path.isdir(ckpt_dir):
             existed_files = os.listdir(ckpt_dir)
             if 'epoch_state' in existed_files and 'latest.pt' in existed_files:
