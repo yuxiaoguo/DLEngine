@@ -75,14 +75,14 @@ if __name__ == '__main__':
         '--wandb_key', type=str, default='', help='Wandb key.')
     args = parser.parse_args()
 
-    if args.wandb_key != '' and dist.get_rank() == 0:
+    if args.wandb_key != '' and ((not dist.is_initialized()) or dist.get_rank() == 0):
         wandb.login(key=args.wandb_key)
         config_path = args.config_path
         config_seps = config_path.replace('\\', '/').split('/')
         task, ms, job_id, _, _ = config_seps[-5:]
         project = f'{task}-{ms}'
-        wandb.init(project=project, name=job_id, sync_tensorboard=True,\
-            dir=os.path.join(args.log_dir, 'wandb'))
+        wandb.init(project=project, name=job_id, sync_tensorboard=True, dir=args.log_dir)
+        os.makedirs(args.log_dir, exist_ok=True)
 
     tmp_dir = tempfile.mkdtemp(prefix='dl_engine_')
     if args.log_dir == '':
