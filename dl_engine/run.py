@@ -8,6 +8,7 @@ import argparse
 import tempfile
 
 import wandb
+from torch import distributed as dist
 
 from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
@@ -74,7 +75,7 @@ if __name__ == '__main__':
         '--wandb_key', type=str, default='', help='Wandb key.')
     args = parser.parse_args()
 
-    if args.wandb_key != '':
+    if args.wandb_key != '' and dist.get_rank() == 0:
         wandb.login(key=args.wandb_key)
         config_path = args.config_path
         config_seps = config_path.replace('\\', '/').split('/')
