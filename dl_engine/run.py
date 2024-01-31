@@ -81,7 +81,7 @@ if __name__ == '__main__':
         task, ms, job_id, _, _ = config_seps[-5:]
         project = f'{task}-{ms}'
         wandb.init(project=project, name=job_id, sync_tensorboard=True,\
-            dir=os.path.join(args.log_dir, 'wandb')
+            dir=os.path.join(args.log_dir, 'wandb'))
 
     tmp_dir = tempfile.mkdtemp(prefix='dl_engine_')
     if args.log_dir == '':
