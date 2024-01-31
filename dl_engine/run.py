@@ -7,6 +7,8 @@ import logging
 import argparse
 import tempfile
 
+import wandb
+
 from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
 
@@ -68,7 +70,18 @@ if __name__ == '__main__':
         '--log_level', type=str, default='INFO', help='Log level.')
     parser.add_argument(\
         '--num_nodes', type=int, default=1, help='Number of nodes.')
+    parser.add_argument(\
+        '--wandb_key', type=str, default='', help='Wandb key.')
     args = parser.parse_args()
+
+    if args.wandb_key != '':
+        wandb.login(key=args.wandb_key)
+        config_path = args.config_path
+        config_seps = config_path.replace('\\', '/').split('/')
+        task, ms, job_id, _, _ = config_seps[-5:]
+        project = f'{task}-{ms}'
+        wandb.init(project=project, name=job_id, sync_tensorboard=True,\
+            dir=os.path.join(args.log_dir, 'wandb')
 
     tmp_dir = tempfile.mkdtemp(prefix='dl_engine_')
     if args.log_dir == '':
