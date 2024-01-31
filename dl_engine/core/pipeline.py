@@ -36,6 +36,7 @@ class Pipeline:
     """
     def __init__(self, config_path: str, log_dir, ckpt_dir, prof_dir, devices='auto', num_nodes=1,
         wandb_key=''):
+        SingletonWriter().initialize(log_dir=log_dir)
         self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
         self._fabric = L.Fabric(\
             precision=self._config.precision, devices=devices, num_nodes=num_nodes)  # type: ignore
@@ -68,7 +69,6 @@ class Pipeline:
                 project = f'{task}-{ms}'
                 wandb.init(project=project, name=job_id, sync_tensorboard=True, dir=log_dir)
                 os.makedirs(log_dir, exist_ok=True)
-            SingletonWriter().initialize(log_dir=log_dir)
 
     def args_matching(self, func: Callable, kwargs_dict: Dict):
         """
