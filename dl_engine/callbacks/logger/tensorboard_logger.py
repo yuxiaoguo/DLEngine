@@ -21,6 +21,7 @@ class SingletonWriter:
         self._writer = SummaryWriter(log_dir=log_dir)  # pylint: disable=attribute-defined-outside-init
         self._iter = 0  # pylint: disable=attribute-defined-outside-init
         self._epoch = 0  # pylint: disable=attribute-defined-outside-init
+        self._writer.add_scalar('epoch', self._epoch, self._iter)
 
     @property
     def writer(self):
@@ -54,3 +55,4 @@ class SingletonWriter:
         Update the epoch number
         """
         self._epoch += tick
+        self._writer.add_scalar('epoch', self._epoch, self._iter)

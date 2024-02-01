@@ -43,7 +43,7 @@ class ScalarVisualizer(BaseVisualizer):
 
     def _run(self, io_proto: ScalarIO, **extra_kwargs):
         assert io_proto.scalar is not None, 'Input scalars should not be None'
-        if self._writer is None:
+        if self._writer is None and self._global_rank == 0:
             self._writer = SingletonWriter()
 
         scalars: Dict[str, torch.Tensor] = io_proto.scalar
