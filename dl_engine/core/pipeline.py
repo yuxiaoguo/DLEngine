@@ -68,7 +68,7 @@ class Pipeline:
                 project = f'{task}-{ms}'
                 wandb.init(project=project, name=job_id, sync_tensorboard=True, dir=log_dir)
                 os.makedirs(log_dir, exist_ok=True)
-        SingletonWriter().initialize(log_dir=f'{log_dir}/tensorboard')
+            SingletonWriter().initialize(log_dir=f'{log_dir}/tensorboard')
 
     def args_matching(self, func: Callable, kwargs_dict: Dict):
         """
