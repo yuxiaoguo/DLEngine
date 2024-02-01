@@ -70,4 +70,4 @@ class ScalarVisualizer(BaseVisualizer):
         for key, value in self._scalars.items():
             mean_scalar = np.mean(value)
             self._writer.writer.add_scalar(\
-                f'{self._tag}/{key}_epoch', mean_scalar, self._writer.epoch)
+                f'{self._tag}/{key}_epoch', mean_scalar, self._writer.iter)
