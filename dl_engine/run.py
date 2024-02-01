@@ -8,6 +8,7 @@ import argparse
 import tempfile
 
 import wandb
+from torch import distributed as dist
 
 from dl_engine.core.pipeline import Pipeline
 from dl_engine import data
@@ -74,15 +75,6 @@ if __name__ == '__main__':
         '--wandb_key', type=str, default='', help='Wandb key.')
     args = parser.parse_args()
 
-    if args.wandb_key != '':
-        wandb.login(key=args.wandb_key)
-        config_path = args.config_path
-        config_seps = config_path.replace('\\', '/').split('/')
-        task, ms, job_id, _, _ = config_seps[-5:]
-        project = f'{task}-{ms}'
-        wandb.init(project=project, name=job_id, sync_tensorboard=True,\
-            dir=os.path.join(args.log_dir, 'wandb'))
-
     tmp_dir = tempfile.mkdtemp(prefix='dl_engine_')
     if args.log_dir == '':
         args.log_dir = os.path.join(tmp_dir, 'dl_engine_log')
@@ -94,5 +86,6 @@ if __name__ == '__main__':
     log_level = getattr(logging, args.log_level.upper())
     logging.basicConfig(level=log_level, handlers=[logging.StreamHandler()])
     pipe_core = Pipeline(\
-        args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir, num_nodes=args.num_nodes)
+        args.config_path, args.log_dir, args.ckpt_dir, args.prof_dir, num_nodes=args.num_nodes,
+        wandb_key=args.wandb_key)
     pipe_core.run()

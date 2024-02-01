@@ -3,7 +3,6 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 from typing import Type
 
-from ..logger.tensorboard_logger import SingletonWriter
 from ..base import BaseCallback, BaseIO
 
 
@@ -25,8 +24,7 @@ class BaseVisualizer(BaseCallback):
         io_type: Type[BaseIO]=VisualizerIO) -> None:
         super().__init__(in_descs=in_descs, out_descs=out_descs, io_type=io_type)
         self._stride = stride
-        self._writer = SingletonWriter()
-        self._tensorb = self._writer.writer
+        self._writer = None
 
         self._iter = 0
 

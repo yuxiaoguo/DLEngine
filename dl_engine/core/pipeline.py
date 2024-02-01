@@ -3,12 +3,12 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 # pylint: disable=unused-import,logging-fstring-interpolation
 import os
-import re
 import shutil
 import inspect
 from typing import Callable, Optional, Dict, List
 
 import torch
+import wandb
 import lightning as L
 from torch import distributed as dist
 
@@ -34,8 +34,8 @@ class Pipeline:
     """
     Pipeline class for running training/inference pipeline.
     """
-    def __init__(self, config_path, log_dir, ckpt_dir, prof_dir, devices='auto', num_nodes=1):
-        SingletonWriter().initialize(log_dir=log_dir)
+    def __init__(self, config_path: str, log_dir, ckpt_dir, prof_dir, devices='auto', num_nodes=1,
+        wandb_key=''):
         self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
         self._fabric = L.Fabric(\
             precision=self._config.precision, devices=devices, num_nodes=num_nodes)  # type: ignore
@@ -59,6 +59,16 @@ class Pipeline:
         self._load_ckpt()
 
         self._rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+
+        if self._rank == 0:
+            if wandb_key != '' and self._rank == 0:
+                wandb.login(key=wandb_key)
+                config_seps = config_path.replace('\\', '/').split('/')
+                task, ms, job_id, _, _ = config_seps[-5:]
+                project = f'{task}-{ms}'
+                wandb.init(project=project, name=job_id, sync_tensorboard=True, dir=log_dir)
+                os.makedirs(log_dir, exist_ok=True)
+            SingletonWriter().initialize(log_dir=f'{log_dir}/tensorboard')
 
     def args_matching(self, func: Callable, kwargs_dict: Dict):
         """
