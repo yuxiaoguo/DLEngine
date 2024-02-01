@@ -3,6 +3,7 @@ Copyright (c) 2023 Yu-Xiao Guo All rights reserved.
 """
 
 from torch.utils.tensorboard.writer import SummaryWriter
+from torch.distributed import get_rank
 
 
 class SingletonWriter:
@@ -18,9 +19,11 @@ class SingletonWriter:
         """
         Initialize the writer
         """
-        self._writer = SummaryWriter(log_dir=log_dir)  # pylint: disable=attribute-defined-outside-init
         self._iter = 0  # pylint: disable=attribute-defined-outside-init
         self._epoch = 0  # pylint: disable=attribute-defined-outside-init
+        if get_rank() != 0:
+            return
+        self._writer = SummaryWriter(log_dir=log_dir)  # pylint: disable=attribute-defined-outside-init
         self._writer.add_scalar('epoch', self._epoch, self._iter)
 
     @property
@@ -55,4 +58,6 @@ class SingletonWriter:
         Update the epoch number
         """
         self._epoch += tick
+        if get_rank() != 0:
+            return
         self._writer.add_scalar('epoch', self._epoch, self._iter)
