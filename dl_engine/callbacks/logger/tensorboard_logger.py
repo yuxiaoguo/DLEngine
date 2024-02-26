@@ -24,7 +24,7 @@ class SingletonWriter:
         if is_initialized() and get_rank() != 0:
             return
         self._writer = SummaryWriter(log_dir=log_dir)  # pylint: disable=attribute-defined-outside-init
-        self._writer.add_scalar('epoch', self._epoch, self._iter)
+        # self._writer.add_scalar('epoch', self._epoch, self._iter)
 
     @property
     def writer(self):
