@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from lightning import Fabric
 from lightning.fabric.wrappers import _FabricModule
 
-from .network import BaseNetwork
+from .network import BaseNetwork, TrainState
 from ..callbacks.base import BaseCallback
 from ..callbacks.logger.tensorboard_logger import SingletonWriter
 
@@ -167,7 +167,8 @@ class TrainPipeBlock(PipeBlock):
 
     def run_epoch(self, epoch_idx):
         for _flow in self._execution_flow:
-            _flow.train()
+            if _flow.trainable in [TrainState.TRAINABLE]:
+                _flow.train()
         self._run_callbacks_before_epoch()
         for iter_idx, iter_data in enumerate(self._dataloader):
             out_data = self.run_iter(iter_data)
