@@ -58,6 +58,6 @@ class SingletonWriter:
         Update the epoch number
         """
         self._epoch += tick
-        if get_rank() != 0:
+        if is_initialized() and get_rank() != 0:
             return
         self._writer.add_scalar('epoch', self._epoch, self._iter)
