@@ -10,6 +10,7 @@ from typing import Callable, Optional, Dict, List
 import torch
 import wandb
 import lightning as L
+from lightning.fabric.strategies import DDPStrategy
 from torch import distributed as dist
 
 from . import pipe_block
@@ -37,7 +38,8 @@ class Pipeline:
     def __init__(self, config_path: str, log_dir, ckpt_dir, prof_dir, devices='auto', num_nodes=1,
         wandb_key=''):
         self._config = PipelineConfig().from_yaml(config_path, log_dir, ckpt_dir, prof_dir)
-        self._fabric = L.Fabric(\
+        strategy = DDPStrategy(find_unused_parameters=True)
+        self._fabric = L.Fabric(strategy=strategy,
             precision=self._config.precision, devices=devices, num_nodes=num_nodes)  # type: ignore
         self._fabric.launch()
 
