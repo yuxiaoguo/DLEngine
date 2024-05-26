@@ -100,19 +100,22 @@ class MetaInstance:
     """
     Meta instance.
     """
-    def __init__(self,
-                 meta_data: dict[str, np.ndarray] | None,
-                 meta_cfg: LFSMetaDesc,
-                 shuffle: bool,
-                 piece_len: int,
-                 offset_ratio: int,
-                 seq_offset: int) -> None:
+    def __init__(
+            self,
+            meta_data: dict[str, np.ndarray] | None,
+            meta_cfg: LFSMetaDesc,
+            shuffle: bool,
+            piece_len: int,
+            offset_ratio: int,
+            seq_offset: int,
+            key_attrs: dict[str, dict[str, str]] = None) -> None:
         self._meta_data = meta_data
         self._meta_cfg = meta_cfg
         self._shuffle = shuffle
         self._piece_len = piece_len
         self._offset_ratio = offset_ratio
         self._seq_offset = seq_offset
+        self._key_attrs = key_attrs if key_attrs is not None else dict()
 
         self._cur_idx = 0
         self._index_map = np.arange(meta_cfg.seq_count) + meta_cfg.seq_begin
@@ -137,7 +140,8 @@ class MetaInstance:
                          sel_idx: int,
                          seq_idx: int,
                          audio_offset,
-                         non_seq_keys) -> dict[str, np.ndarray]:
+                         non_seq_keys,
+                         with_seq_info = False) -> dict[str, np.ndarray]:
         """
         Split the data to pieces.
         """
@@ -156,6 +160,8 @@ class MetaInstance:
             for _k, _v in data_dict.items()}
         next_data['seq_name'] = data_dict['name']
         next_data['name'] = data_dict['name'] + f'_s{self._seq_offset}_p{seq_bias}'
+        if with_seq_info:
+            return next_data, (seq_start, seq_end)
         return next_data
 
     def next(self) -> dict[str, np.ndarray]:
@@ -321,12 +327,12 @@ class LFSSeqIterableDataset(IterableDataset):
     def _distributed_samples_assignment(self, meta_files_cfg: list[MetaSeqFileDescV0]) -> \
         tuple[list[LFSMetaDesc], int]:
         """
-        Assign samples to each rank. 
+        Assign samples to each rank.
         The whole dataset is consisted of several meta files.
             For each meta file, it contains a dictionary of sequences. Each sequence has
             variable length of frames. During runtime, the sequence will be split into
             several pieces with fixed length. For each rank, it needs to ensure that the
-            number of samples is evenly seen by all ranks. Based on this, the needed 
+            number of samples is evenly seen by all ranks. Based on this, the needed
             meta files and the corresponding number of samples will be assigned to each
             rank.
 
@@ -456,13 +462,15 @@ class LFSSeqIterableDataset(IterableDataset):
 
     def _async_fecth(self, future: Future):
         meta_cfg = self._meta_file_descs[self._next_meta_idx]
+        key_attrs = self._desc_cfg.meta_files[self._next_meta_idx].key_attrs
         fetch_meta = self.META_INSTANCE_TYPE(\
             future.result(),
             meta_cfg,
             self._shuffle,
             self._seq_split,
             self._overlap_ratio,
-            self._seq_offset)
+            self._seq_offset,
+            key_attrs=key_attrs)
         with self._queue_lock:
             self._prefetch_metas.append(fetch_meta)
             self._next_meta_idx += 1

@@ -60,6 +60,7 @@ class MetaSeqFileDescV0(MetaFileDescV0):
     num_nonseq_samples: int = 0
     global_nonseq_offset: int = 0
     local_nonseq_offset: list[int] = field(default_factory=list)
+    key_attrs: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass
