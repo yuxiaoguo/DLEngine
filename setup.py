@@ -22,6 +22,7 @@ setup(
         'opencv-python-headless',
         'librosa>=0.10.0.post2,<=0.10.2.post1',
         'lightning>=2.0.2,<=2.2.5',
+        'pytorch-lightning<=2.2',
         'moviepy>=1.0.3',
         'torchmetrics>=0.11.4,<=1.4.0.post0',
         'gitpython'
