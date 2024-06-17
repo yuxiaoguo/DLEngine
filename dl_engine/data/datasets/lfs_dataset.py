@@ -70,6 +70,7 @@ class KeyDataDesc:
     dtype: str = 'float32'
     data_pkg: str | None = None
     preloaded: bool = False
+    t2v_ratio: int = 1
     transforms: list[Callable] = field(default_factory=list)
     fetch_packages: list[list[str]] = field(default_factory=list)
     fetch_transforms: list[Callable] = field(default_factory=list)
@@ -135,60 +136,45 @@ class MetaInstance:
         """
         return np.maximum(0, (seqs_num_frames + int(offset_ratio * piece_len)) // piece_len - 1)
 
-    def _split_to_pieces(self,
-                         data_dict: dict[str, np.ndarray],
-                         sel_idx: int,
-                         seq_idx: int,
-                         audio_offset,
-                         non_seq_keys,
-                         with_seq_info = False) -> dict[str, np.ndarray]:
+    def loading_seq_data(self):
         """
-        Split the data to pieces.
-        """
-        if self._piece_len == 0:
-            return data_dict
-
-        seq_bias = sel_idx - self._meta_cfg.pieces_offset[seq_idx]
-        if self._shuffle:
-            rand_end = self._meta_cfg.random_range[seq_idx] - audio_offset
-            const_bias = np.random.randint(0, rand_end)
-        else:
-            const_bias = self._seq_offset
-        seq_start = seq_bias * self._piece_len + const_bias
-        seq_end = seq_start + self._piece_len
-        next_data = {_k: (_v[seq_start:seq_end] if _k not in non_seq_keys else _v) \
-            for _k, _v in data_dict.items()}
-        next_data['seq_name'] = data_dict['name']
-        next_data['name'] = data_dict['name'] + f'_s{self._seq_offset}_p{seq_bias}'
-        if with_seq_info:
-            return next_data, (seq_start, seq_end)
-        return next_data
-
-    def next(self) -> dict[str, np.ndarray]:
-        """
-        Get the next meta instance.
+        Load the sequence data.
         """
         assert self._meta_data is not None
         sel_idx = self._index_map[self._cur_idx]
         seq_idx = np.searchsorted(\
             self._meta_cfg.pieces_offset, sel_idx, side='right') - 1
+        seq_bias = sel_idx - self._meta_cfg.pieces_offset[seq_idx]
+
+        seq_data = {_k: _v[seq_idx] for _k, _v in self._meta_data.items()}
+
+        self._cur_idx += 1
+        if self._cur_idx >= self._meta_cfg.seq_count:
+            self._meta_data = None
+        return seq_data, (seq_bias, seq_idx)
+
+    def parse_seq_data(self, seq_data: dict[str, np.ndarray], seq_bias: int, seq_idx: int):
+        """
+        Parse the sequence data.
+        """
         if self._piece_len > 0:
-            seq_bias = sel_idx - self._meta_cfg.pieces_offset[seq_idx]
             if self._shuffle:
                 const_bias = np.random.randint(0, self._meta_cfg.random_range[seq_idx])
             else:
                 const_bias = self._seq_offset
             seq_start = seq_bias * self._piece_len + const_bias
             seq_end = seq_start + self._piece_len
-            next_data = {_k: _v[seq_idx][seq_start:seq_end] for _k, _v in self._meta_data.items()}
-            next_data['name'] = self._meta_data['name'][seq_idx] + \
-                f'_s{self._seq_offset}_p{seq_bias}'
-        else:
-            next_data = {_k: _v[seq_idx] for _k, _v in self._meta_data.items()}
-        next_data['seq_name'] = self._meta_data['name'][seq_idx]
-        self._cur_idx += 1
-        if self._cur_idx >= self._meta_cfg.seq_count:
-            self._meta_data = None
+            next_data = {_k: _v[seq_start:seq_end] for _k, _v in seq_data.items()}
+            next_data['name'] = self._meta_data['name'] + f'_s{self._seq_offset}_p{seq_bias}'
+        next_data['seq_name'] = self._meta_data['name']
+        return next_data
+
+    def next(self) -> dict[str, np.ndarray]:
+        """
+        Get the next meta instance.
+        """
+        next_seq_data, (sel_bias, seq_idx) = self.loading_seq_data()
+        next_data = self.parse_seq_data(next_seq_data, sel_bias, seq_idx)
         return next_data
 
 
@@ -223,10 +209,12 @@ class LFSSeqIterableDataset(IterableDataset):
                 self._desc_cfg = SequentialDataDescV0(**json.load(desc_cfg_stream))
 
         self._data_root = data_root
-        self._used_keys = {
+        self._used_keys: dict[str, KeyDataDesc] = {
             _k: KeyDataDesc(**_v) if isinstance(_v, dict) else KeyDataDesc(_v) \
                 for _k, _v in used_keys.items()
         }
+
+        self._key_attrs = self._gather_key_attrs(data_root, self._used_keys)
 
         self._desc_cfg: SequentialDataDescV0 = self._desc_cfg
         self._seq_len = seq_len
@@ -272,6 +260,25 @@ class LFSSeqIterableDataset(IterableDataset):
 
         # preloading data
         self._preloading_data()
+
+    def _gather_key_attrs(self, data_root: str, used_keys: dict[str, KeyDataDesc]):
+        if not os.path.exists(os.path.join(data_root)):
+            return dict()
+
+        reverse_map = {_v.raw_key: _k for _k, _v in used_keys.items()}
+        all_descs_files = [os.path.join(data_root, _f) for _f in os.listdir(data_root) \
+            if str(_f).endswith('.json')]
+        all_descs_cfg: list[SequentialDataDescV0] = list()
+        for desc_file in all_descs_files:
+            with open(desc_file, 'r', encoding='utf-8') as desc_stream:
+                all_descs_cfg.append(SequentialDataDescV0(**json.load(desc_stream)))
+        key_attrs = {}
+        for desc_cfg in all_descs_cfg:
+            local_key_attrs = getattr(desc_cfg.meta_files[0], 'key_attrs', {})
+            key_attrs.update(local_key_attrs)
+        key_attrs = {\
+            reverse_map[_k] if _k in reverse_map else _k: _v for _k, _v in key_attrs.items()}
+        return key_attrs
 
     def _install_packages(self):
         pkgs_def = list()
@@ -462,7 +469,6 @@ class LFSSeqIterableDataset(IterableDataset):
 
     def _async_fecth(self, future: Future):
         meta_cfg = self._meta_file_descs[self._next_meta_idx]
-        key_attrs = self._desc_cfg.meta_files[self._next_meta_idx].key_attrs
         fetch_meta = self.META_INSTANCE_TYPE(\
             future.result(),
             meta_cfg,
@@ -470,7 +476,7 @@ class LFSSeqIterableDataset(IterableDataset):
             self._seq_split,
             self._overlap_ratio,
             self._seq_offset,
-            key_attrs=key_attrs)
+            key_attrs=self._key_attrs)
         with self._queue_lock:
             self._prefetch_metas.append(fetch_meta)
             self._next_meta_idx += 1
