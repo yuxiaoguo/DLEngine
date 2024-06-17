@@ -13,7 +13,7 @@ setup(
     license='MIT',
     packages=find_packages(),
     install_requires=[
-        'torch>=1.13.1,<=2.2.2',
+        'torch==1.13.1',
         'PyYAML>=6.0',
         'tqdm>=4.65.0',
         'transformers>=4.27.4,<=4.41.1',
