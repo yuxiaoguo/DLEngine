@@ -13,7 +13,7 @@ setup(
     license='MIT',
     packages=find_packages(),
     install_requires=[
-        'torch>=1.13.1,<=2.2.2',
+        'torch==1.13.1',
         'PyYAML>=6.0',
         'tqdm>=4.65.0',
         'transformers>=4.27.4,<=4.41.1',
@@ -22,6 +22,7 @@ setup(
         'opencv-python-headless',
         'librosa>=0.10.0.post2,<=0.10.2.post1',
         'lightning>=2.0.2,<=2.2.5',
+        'pytorch-lightning<=2.2',
         'moviepy>=1.0.3',
         'torchmetrics>=0.11.4,<=1.4.0.post0',
         'gitpython'
